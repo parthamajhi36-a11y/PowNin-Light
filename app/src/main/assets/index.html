@@ -1,0 +1,59 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#101010">
+    <title>PowNin Assistant</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <main class="app">
+
+        <header class="header">
+            <div class="logo">P</div>
+            <div>
+                <h1>POWNIN</h1>
+                <p>SMART AI ASSISTANT</p>
+            </div>
+            <span id="status" class="status">READY</span>
+        </header>
+
+        <section class="welcome">
+            <h2>Hello! I am PowNin.</h2>
+            <p>Your personal AI assistant.</p>
+        </section>
+
+        <section class="chat" id="chat">
+            <div class="message bot">
+                Hello! How can I help you today?
+            </div>
+        </section>
+
+        <section class="controls">
+            <input
+                id="commandInput"
+                type="text"
+                placeholder="Type your message..."
+                autocomplete="off"
+            >
+
+            <button id="sendBtn">SEND</button>
+        </section>
+
+        <section class="voice-controls">
+            <button id="voiceBtn">VOICE INPUT</button>
+            <button id="stopBtn">STOP VOICE</button>
+        </section>
+
+        <footer>
+            <p>PowNin Android • Version 1.0</p>
+        </footer>
+
+    </main>
+
+    <script src="app.js"></script>
+</body>
+</html>
