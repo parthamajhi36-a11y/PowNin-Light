@@ -14,26 +14,38 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.activity.compose.setContent
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
 
     private lateinit var webView: WebView
+
     private var speechRecognizer: SpeechRecognizer? = null
     private var textToSpeech: TextToSpeech? = null
 
     private var ttsReady = false
     private var pendingText: String? = null
     private var pendingLanguage = "en-IN"
-    private var listening = false
 
-    companion object {
-        private const val AUDIO_PERMISSION = 101
-    }
+    private val audioPermissionLauncher =
+        registerForActivityResult(
+            ActivityResultContracts.RequestPermission()
+        ) { granted ->
+
+            if (granted) {
+                launchRecognition(pendingLanguage)
+            } else {
+                notifyJavascript(
+                    "onNativeSpeechError",
+                    "Microphone permission denied"
+                )
+            }
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -79,12 +91,14 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // NATIVE TEXT TO SPEECH
+    // TEXT TO SPEECH
 
     private fun setupTextToSpeech() {
+
         textToSpeech = TextToSpeech(this) { status ->
 
             if (status == TextToSpeech.SUCCESS) {
+
                 ttsReady = true
 
                 pendingText?.let { text ->
@@ -93,7 +107,9 @@ class MainActivity : ComponentActivity() {
                 }
 
                 notifyJavascript("onNativeTtsReady")
+
             } else {
+
                 notifyJavascript(
                     "onNativeSpeechError",
                     "TTS initialization failed"
@@ -106,6 +122,7 @@ class MainActivity : ComponentActivity() {
         text: String,
         language: String
     ) {
+
         if (!ttsReady || text.isBlank()) return
 
         val locale = when (language) {
@@ -137,9 +154,10 @@ class MainActivity : ComponentActivity() {
         )
     }
 
-    // NATIVE SPEECH RECOGNITION
+    // SPEECH RECOGNITION
 
     private fun setupSpeechRecognizer() {
+
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
             return
         }
@@ -151,7 +169,6 @@ class MainActivity : ComponentActivity() {
             object : RecognitionListener {
 
                 override fun onReadyForSpeech(params: Bundle?) {
-                    listening = true
                     notifyJavascript("onNativeListening")
                 }
 
@@ -161,12 +178,9 @@ class MainActivity : ComponentActivity() {
 
                 override fun onBufferReceived(buffer: ByteArray?) {}
 
-                override fun onEndOfSpeech() {
-                    listening = false
-                }
+                override fun onEndOfSpeech() {}
 
                 override fun onError(error: Int) {
-                    listening = false
                     notifyJavascript(
                         "onNativeSpeechError",
                         "Speech recognition error: $error"
@@ -174,7 +188,6 @@ class MainActivity : ComponentActivity() {
                 }
 
                 override fun onResults(results: Bundle?) {
-                    listening = false
 
                     val matches = results?.getStringArrayList(
                         SpeechRecognizer.RESULTS_RECOGNITION
@@ -208,24 +221,26 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun startNativeListening(language: String) {
+
         runOnUiThread {
+
+            pendingLanguage = language
 
             if (!SpeechRecognizer.isRecognitionAvailable(this)) {
                 notifyJavascript(
                     "onNativeSpeechError",
-                    "Speech recognition is unavailable"
+                    "Speech recognition unavailable"
                 )
                 return@runOnUiThread
             }
 
-            if (checkSelfPermission(Manifest.permission.RECORD_AUDIO)
-                != PackageManager.PERMISSION_GRANTED
+            if (checkSelfPermission(
+                    Manifest.permission.RECORD_AUDIO
+                ) != PackageManager.PERMISSION_GRANTED
             ) {
-                requestPermissions(
-                    arrayOf(Manifest.permission.RECORD_AUDIO),
-                    AUDIO_PERMISSION
+                audioPermissionLauncher.launch(
+                    Manifest.permission.RECORD_AUDIO
                 )
-                pendingLanguage = language
                 return@runOnUiThread
             }
 
@@ -234,7 +249,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun launchRecognition(language: String) {
+
         try {
+
             if (speechRecognizer == null) {
                 setupSpeechRecognizer()
             }
@@ -242,22 +259,27 @@ class MainActivity : ComponentActivity() {
             val intent = Intent(
                 RecognizerIntent.ACTION_RECOGNIZE_SPEECH
             ).apply {
+
                 putExtra(
                     RecognizerIntent.EXTRA_LANGUAGE_MODEL,
                     RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
                 )
+
                 putExtra(
                     RecognizerIntent.EXTRA_LANGUAGE,
                     language
                 )
+
                 putExtra(
                     RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE,
                     language
                 )
+
                 putExtra(
                     RecognizerIntent.EXTRA_PARTIAL_RESULTS,
                     false
                 )
+
                 putExtra(
                     RecognizerIntent.EXTRA_MAX_RESULTS,
                     3
@@ -267,6 +289,7 @@ class MainActivity : ComponentActivity() {
             speechRecognizer?.startListening(intent)
 
         } catch (e: Exception) {
+
             notifyJavascript(
                 "onNativeSpeechError",
                 e.message ?: "Unable to start listening"
@@ -275,11 +298,11 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun stopNativeListening() {
+
         runOnUiThread {
+
             try {
-                speechRecognizer?.stopListening()
                 speechRecognizer?.cancel()
-                listening = false
             } catch (_: Exception) {
             }
         }
@@ -291,9 +314,11 @@ class MainActivity : ComponentActivity() {
         function: String,
         message: String? = null
     ) {
+
         if (!::webView.isInitialized) return
 
         runOnUiThread {
+
             val script = if (message == null) {
                 "window.$function && window.$function();"
             } else {
@@ -313,9 +338,11 @@ class MainActivity : ComponentActivity() {
 
         @JavascriptInterface
         fun speak(text: String?, language: String?) {
+
             if (text.isNullOrBlank()) return
 
             runOnUiThread {
+
                 val lang = language ?: "en-IN"
 
                 if (ttsReady) {
@@ -347,39 +374,14 @@ class MainActivity : ComponentActivity() {
         @JavascriptInterface
         fun isVoiceReady(): Boolean {
             return ttsReady &&
-                SpeechRecognizer.isRecognitionAvailable(this@MainActivity)
-        }
-    }
-
-    // MICROPHONE PERMISSION RESULT
-
-    @Deprecated("Deprecated in Android API")
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<out String>,
-        grantResults: IntArray
-    ) {
-        super.onRequestPermissionsResult(
-            requestCode,
-            permissions,
-            grantResults
-        )
-
-        if (requestCode == AUDIO_PERMISSION) {
-            if (grantResults.isNotEmpty() &&
-                grantResults[0] == PackageManager.PERMISSION_GRANTED
-            ) {
-                launchRecognition(pendingLanguage)
-            } else {
-                notifyJavascript(
-                    "onNativeSpeechError",
-                    "Microphone permission denied"
+                SpeechRecognizer.isRecognitionAvailable(
+                    this@MainActivity
                 )
-            }
         }
     }
 
     override fun onDestroy() {
+
         if (::webView.isInitialized) {
             webView.stopLoading()
             webView.removeJavascriptInterface("PowninAndroid")
