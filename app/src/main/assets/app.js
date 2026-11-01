@@ -960,20 +960,20 @@ function sendMessage() {
 // 29. MODE BUTTON EVENTS
 // ==========================================
 
-if (offlineModeBtn) {
-    offlineModeBtn.addEventListener("click", function() {
+if (modeButtons.offline) {
+    modeButtons.offline.addEventListener("click", function() {
         setPowninMode("offline");
     });
 }
 
-if (onlineModeBtn) {
-    onlineModeBtn.addEventListener("click", function() {
+if (modeButtons.online) {
+    modeButtons.online.addEventListener("click", function() {
         setPowninMode("online");
     });
 }
 
-if (hybridModeBtn) {
-    hybridModeBtn.addEventListener("click", function() {
+if (modeButtons.hybrid) {
+    modeButtons.hybrid.addEventListener("click", function() {
         setPowninMode("hybrid");
     });
 }
