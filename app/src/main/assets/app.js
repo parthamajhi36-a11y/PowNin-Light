@@ -1019,9 +1019,12 @@ if (stopBtn) {
 // 33. CLEAR CHAT EVENT
 // ==========================================
 
-if (clearChatBtn) {
-    clearChatBtn.addEventListener("click", function() {
+const clearChatButton = document.getElementById("clearChatBtn");
+
+if (clearChatButton) {
+    clearChatButton.addEventListener("click", function() {
         clearConversation();
+        restoreConversationDisplay();
     });
 }
 
