@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -5,6 +6,7 @@
     <meta name="viewport"
           content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="theme-color" content="#08090d">
+    <meta name="description" content="POWNIN Personal AI Assistant">
 
     <title>POWNIN</title>
 
@@ -28,9 +30,15 @@
         </div>
 
         <div class="system-status">
-            <span class="status-dot"></span>
+            <span class="status-dot" id="statusDot"></span>
             <span id="status">READY</span>
         </div>
+
+        <button type="button"
+                id="settingsBtn"
+                class="clear-btn">
+            SETTINGS
+        </button>
 
     </header>
 
@@ -88,8 +96,8 @@
                     <h2>AI MODE</h2>
                 </div>
 
-                <span id="modeLabel" class="mode-label">
-                    HYBRID
+                <span id="brainModeLabel" class="mode-label">
+                    HYBRID MODE
                 </span>
 
             </div>
@@ -106,7 +114,6 @@
 
                 </button>
 
-
                 <button type="button"
                         class="mode-btn"
                         id="onlineModeBtn"
@@ -116,7 +123,6 @@
                     <span>ONLINE</span>
 
                 </button>
-
 
                 <button type="button"
                         class="mode-btn active"
@@ -129,6 +135,13 @@
                 </button>
 
             </div>
+
+            <!-- JavaScript mode selector -->
+            <select id="mode" hidden>
+                <option value="offline">Offline</option>
+                <option value="online">Online</option>
+                <option value="hybrid" selected>Hybrid</option>
+            </select>
 
         </section>
 
@@ -143,7 +156,9 @@
                     <h2>VOICE CENTER</h2>
                 </div>
 
-                <span class="voice-status">READY</span>
+                <span class="voice-status" id="voiceLabel">
+                    READY
+                </span>
 
             </div>
 
@@ -160,6 +175,26 @@
             <p class="voice-hint">
                 Voice recognition system
             </p>
+
+            <div class="language-control">
+                <label for="language">VOICE LANGUAGE</label>
+
+                <select id="language">
+                    <option value="en-IN" selected>English</option>
+                    <option value="bn-IN">বাংলা (Bengali)</option>
+                    <option value="hi-IN">हिन्दी (Hindi)</option>
+                </select>
+            </div>
+
+            <div class="system-information">
+                <span>NETWORK:</span>
+                <span id="networkLabel">HYBRID</span>
+            </div>
+
+            <div class="system-information">
+                <span>DEVICE TIME:</span>
+                <span id="clock">--:--</span>
+            </div>
 
         </section>
 
@@ -188,27 +223,35 @@
 
             <div class="input-area">
 
-                <div class="input-box">
+                <form id="commandForm">
 
-                    <input
-                        id="commandInput"
-                        type="text"
-                        placeholder="Talk to POWNIN..."
-                        autocomplete="off"
-                        maxlength="2000">
+                    <div class="input-box">
 
-                    <button type="button" id="sendBtn">
-                        SEND
-                        <span>➤</span>
-                    </button>
+                        <input
+                            id="command"
+                            type="text"
+                            placeholder="Talk to POWNIN..."
+                            autocomplete="off"
+                            maxlength="1000">
 
-                </div>
+                        <button type="submit" id="sendBtn">
+                            SEND
+                            <span>➤</span>
+                        </button>
+
+                    </div>
+
+                    <div class="character-count">
+                        <span id="characterCount">0</span>/1000
+                    </div>
+
+                </form>
 
 
                 <div class="voice-actions">
 
                     <button type="button"
-                            id="voiceBtn"
+                            id="micBtn"
                             class="voice-action primary-voice">
 
                         <span>🎙</span>
@@ -218,7 +261,17 @@
 
 
                     <button type="button"
-                            id="stopBtn"
+                            id="speakBtn"
+                            class="voice-action">
+
+                        <span>🔊</span>
+                        REPEAT REPLY
+
+                    </button>
+
+
+                    <button type="button"
+                            id="stopSpeakBtn"
                             class="voice-action stop-voice">
 
                         <span>■</span>
@@ -227,6 +280,75 @@
                     </button>
 
                 </div>
+
+            </div>
+
+        </section>
+
+
+        <!-- SETTINGS PANEL -->
+        <section id="settingsPanel"
+                 class="settings-panel"
+                 hidden>
+
+            <div class="section-title">
+
+                <div>
+                    <span class="eyebrow">CONFIGURATION</span>
+                    <h2>AI SETTINGS</h2>
+                </div>
+
+                <button type="button"
+                        id="closeSettingsBtn"
+                        class="clear-btn">
+                    CLOSE
+                </button>
+
+            </div>
+
+            <div class="settings-content">
+
+                <label for="endpoint">
+                    AI API ENDPOINT
+                </label>
+
+                <input
+                    id="endpoint"
+                    type="url"
+                    placeholder="https://your-api-endpoint/v1/chat/completions"
+                    autocomplete="url">
+
+                <label for="model">
+                    AI MODEL
+                </label>
+
+                <input
+                    id="model"
+                    type="text"
+                    placeholder="Enter model name"
+                    autocomplete="off">
+
+                <label for="apiKey">
+                    API KEY
+                </label>
+
+                <input
+                    id="apiKey"
+                    type="password"
+                    placeholder="Enter your API key"
+                    autocomplete="off">
+
+                <button type="button"
+                        id="clearKeyBtn"
+                        class="clear-btn">
+                    CLEAR API KEY
+                </button>
+
+                <p class="settings-warning">
+                    Do not share your API key. A key entered in the
+                    Android app is not securely hidden from the device
+                    or its users. A private backend is recommended.
+                </p>
 
             </div>
 
