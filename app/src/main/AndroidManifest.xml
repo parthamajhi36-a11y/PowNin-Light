@@ -10,12 +10,21 @@
         android:name="android.hardware.microphone"
         android:required="false" />
 
-    <!-- Smart App Control: Package Visibility -->
+    <!-- SMART APP CONTROL: PACKAGE VISIBILITY -->
     <queries>
+
+        <!-- Known applications -->
         <package android:name="com.google.android.youtube" />
         <package android:name="com.android.chrome" />
         <package android:name="com.whatsapp" />
         <package android:name="com.google.android.apps.maps" />
+
+        <!-- Discover installed launcher applications -->
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+
     </queries>
 
     <application
