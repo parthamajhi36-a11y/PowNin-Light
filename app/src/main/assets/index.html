@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport"
           content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <meta name="theme-color" content="#090909">
+    <meta name="theme-color" content="#08090d">
 
     <title>POWNIN</title>
 
@@ -13,175 +13,235 @@
 
 <body>
 
-<main class="app">
+<div class="app-shell">
 
-    <!-- HEADER -->
-    <header class="header">
+    <!-- TOP HEADER -->
+    <header class="top-header">
 
-        <div class="logo">P</div>
+        <div class="brand-area">
+            <div class="brand-icon">P</div>
 
-        <div class="brand">
-            <h1>POWNIN</h1>
-            <p>SMART AI ASSISTANT</p>
+            <div class="brand-info">
+                <h1>POWNIN</h1>
+                <span>PERSONAL AI SYSTEM</span>
+            </div>
         </div>
 
-        <div class="status-box">
+        <div class="system-status">
             <span class="status-dot"></span>
-            <span id="status" class="status">READY</span>
+            <span id="status">READY</span>
         </div>
 
     </header>
 
-    <!-- MASCOT AREA -->
-    <section class="mascot-section">
 
-        <div class="mascot-frame" id="mascotFrame">
+    <!-- MAIN DASHBOARD -->
+    <main class="dashboard">
 
-            <!-- Authorized mascot image can be added later -->
-            <div class="mascot-placeholder" id="mascotPlaceholder">
-                <div class="mascot-symbol">P</div>
-                <p>POWNIN</p>
+        <!-- AI COMPANION -->
+        <section class="hero-panel">
+
+            <div class="panel-top">
                 <span>AI COMPANION</span>
+                <span class="live-label">● SYSTEM ONLINE</span>
             </div>
 
-            <div class="voice-ring ring-one"></div>
-            <div class="voice-ring ring-two"></div>
+            <div class="mascot-area" id="mascotFrame">
 
-        </div>
+                <div class="mascot-glow"></div>
 
-        <div class="assistant-state">
-            <span class="state-indicator"></span>
-            <span id="assistantState">SYSTEM READY</span>
-        </div>
+                <div class="mascot-placeholder"
+                     id="mascotPlaceholder">
 
-    </section>
+                    <div class="mascot-logo">P</div>
 
-    <!-- WELCOME -->
-    <section class="welcome">
+                    <h2>POWNIN</h2>
+                    <span>YOUR AI COMPANION</span>
 
-        <h2>Hello! I am POWNIN.</h2>
+                </div>
 
-        <p>
-            Your personal AI assistant.
-            Ready to help you.
-        </p>
+                <div class="reactor-ring reactor-one"></div>
+                <div class="reactor-ring reactor-two"></div>
+                <div class="reactor-ring reactor-three"></div>
 
-    </section>
-
-    <!-- MODE DISPLAY -->
-    <section class="mode-section">
-
-        <div class="mode-heading">
-            <span>AI MODE</span>
-            <span id="modeLabel">OFFLINE</span>
-        </div>
-
-        <div class="mode-options">
-
-            <button
-                type="button"
-                class="mode-btn active"
-                id="offlineModeBtn"
-                data-mode="offline">
-                OFFLINE
-            </button>
-
-            <button
-                type="button"
-                class="mode-btn"
-                id="onlineModeBtn"
-                data-mode="online">
-                ONLINE
-            </button>
-
-            <button
-                type="button"
-                class="mode-btn"
-                id="hybridModeBtn"
-                data-mode="hybrid">
-                HYBRID
-            </button>
-
-        </div>
-
-    </section>
-
-    <!-- CHAT -->
-    <section class="chat-section">
-
-        <div class="section-heading">
-            <span>CONVERSATION</span>
-
-            <button
-                type="button"
-                id="clearChatBtn"
-                class="clear-btn">
-                CLEAR
-            </button>
-        </div>
-
-        <div class="chat" id="chat">
-
-            <div class="message bot">
-                Hello! How can I help you today?
             </div>
 
-        </div>
+            <div class="assistant-info">
+                <span class="assistant-indicator"></span>
+                <span id="assistantState">SYSTEM READY</span>
+            </div>
 
-    </section>
+            <p class="hero-description">
+                Your intelligent assistant is ready.
+            </p>
 
-    <!-- INPUT -->
-    <section class="input-section">
+        </section>
 
-        <div class="controls">
 
-            <input
-                id="commandInput"
-                type="text"
-                placeholder="Message POWNIN..."
-                autocomplete="off"
-                maxlength="2000">
+        <!-- AI MODE PANEL -->
+        <section class="mode-panel">
 
-            <button
-                type="button"
-                id="sendBtn">
-                SEND
-            </button>
+            <div class="section-title">
+                <div>
+                    <span class="eyebrow">INTELLIGENCE</span>
+                    <h2>AI MODE</h2>
+                </div>
 
-        </div>
+                <span id="modeLabel" class="mode-label">
+                    OFFLINE
+                </span>
+            </div>
 
-        <div class="voice-controls">
+            <div class="mode-grid">
 
-            <button
-                type="button"
-                id="voiceBtn">
-                🎤 VOICE INPUT
-            </button>
+                <button type="button"
+                        class="mode-btn active"
+                        id="offlineModeBtn"
+                        data-mode="offline">
 
-            <button
-                type="button"
-                id="stopBtn">
-                ■ STOP VOICE
-            </button>
+                    <span class="mode-icon">◈</span>
+                    <span>OFFLINE</span>
 
-        </div>
+                </button>
 
-    </section>
+                <button type="button"
+                        class="mode-btn"
+                        id="onlineModeBtn"
+                        data-mode="online">
+
+                    <span class="mode-icon">◎</span>
+                    <span>ONLINE</span>
+
+                </button>
+
+                <button type="button"
+                        class="mode-btn"
+                        id="hybridModeBtn"
+                        data-mode="hybrid">
+
+                    <span class="mode-icon">✧</span>
+                    <span>HYBRID</span>
+
+                </button>
+
+            </div>
+
+        </section>
+
+
+        <!-- VOICE REACTOR -->
+        <section class="voice-panel">
+
+            <div class="section-title">
+                <div>
+                    <span class="eyebrow">AUDIO SYSTEM</span>
+                    <h2>VOICE CENTER</h2>
+                </div>
+
+                <span class="voice-status">READY</span>
+            </div>
+
+            <div class="waveform" aria-hidden="true">
+                <span></span><span></span><span></span>
+                <span></span><span></span><span></span>
+                <span></span><span></span><span></span>
+                <span></span><span></span><span></span>
+                <span></span><span></span><span></span>
+                <span></span><span></span><span></span>
+                <span></span><span></span><span></span>
+            </div>
+
+            <p class="voice-hint">
+                Voice recognition system
+            </p>
+
+        </section>
+
+
+        <!-- CHAT PANEL -->
+        <section class="chat-panel">
+
+            <div class="section-title chat-heading">
+
+                <div>
+                    <span class="eyebrow">AI COMMUNICATION</span>
+                    <h2>CONVERSATION</h2>
+                </div>
+
+                <button type="button"
+                        id="clearChatBtn"
+                        class="clear-btn">
+                    CLEAR CHAT
+                </button>
+
+            </div>
+
+            <div class="chat" id="chat">
+
+                <div class="message bot">
+                    Hello! I am POWNIN. How can I help you?
+                </div>
+
+            </div>
+
+            <div class="input-area">
+
+                <div class="input-box">
+
+                    <input
+                        id="commandInput"
+                        type="text"
+                        placeholder="Talk to POWNIN..."
+                        autocomplete="off"
+                        maxlength="2000">
+
+                    <button type="button" id="sendBtn">
+                        SEND
+                        <span>➤</span>
+                    </button>
+
+                </div>
+
+                <div class="voice-actions">
+
+                    <button type="button"
+                            id="voiceBtn"
+                            class="voice-action primary-voice">
+                        <span>🎙</span>
+                        START LISTENING
+                    </button>
+
+                    <button type="button"
+                            id="stopBtn"
+                            class="voice-action stop-voice">
+                        <span>■</span>
+                        STOP VOICE
+                    </button>
+
+                </div>
+
+            </div>
+
+        </section>
+
+    </main>
+
 
     <!-- FOOTER -->
-    <footer>
+    <footer class="app-footer">
 
-        <span>POWNIN AI</span>
-        <span>ANDROID ASSISTANT</span>
+        <span>POWNIN AI SYSTEM</span>
+        <span>SMART • SECURE • INTELLIGENT</span>
 
     </footer>
 
-</main>
+</div>
 
-<!-- MATH ENGINE FIRST -->
+
+<!-- LOAD MATH ENGINE FIRST -->
 <script src="math-engine.js"></script>
 
-<!-- MAIN BRAIN SECOND -->
+<!-- LOAD MAIN BRAIN -->
 <script src="app.js"></script>
 
 </body>
