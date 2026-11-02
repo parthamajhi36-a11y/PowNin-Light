@@ -427,6 +427,132 @@ function handleCalculation(command, language) {
 }
 
 // ==========================================
+// POWNIN SMART APP CONTROL v1.0
+// ==========================================
+
+function handleAppCommand(command, language) {
+
+    const text = normalizeText(command);
+
+    const apps = [
+        {
+            name: "youtube",
+            words: ["youtube", "ইউটিউব", "यूट्यूब"]
+        },
+        {
+            name: "whatsapp",
+            words: ["whatsapp", "হোয়াটসঅ্যাপ", "व्हाट्सएप"]
+        },
+        {
+            name: "chrome",
+            words: ["chrome", "google chrome", "ক্রোম"]
+        },
+        {
+            name: "maps",
+            words: ["google maps", "maps", "ম্যাপস", "मैप्स"]
+        },
+        {
+            name: "settings",
+            words: ["settings", "সেটিংস", "सेटिंग्स"]
+        },
+        {
+            name: "camera",
+            words: ["camera", "ক্যামেরা", "कैमरा"]
+        },
+        {
+            name: "calculator",
+            words: ["calculator", "ক্যালকুলেটর", "कैलकुलेटर"]
+        },
+        {
+            name: "phone",
+            words: ["phone", "dialer", "ফোন", "फोन"]
+        },
+        {
+            name: "files",
+            words: ["file manager", "files", "ফাইল", "फ़ाइल"]
+        }
+    ];
+
+    const openPatterns = [
+        /\b(open|launch|start)\b/i,
+        /\b(kholo|khul|khule dao|chalu koro)\b/i
+    ];
+
+    const hasOpenCommand =
+        openPatterns.some(pattern => pattern.test(text)) ||
+        text.includes("খোলো") ||
+        text.includes("খুলে দাও") ||
+        text.includes("চালু করো") ||
+        text.includes("खोलो") ||
+        text.includes("खोल दो") ||
+        text.includes("शुरू करो");
+
+    if (!hasOpenCommand) {
+        return null;
+    }
+
+    const selectedApp = apps.find(app =>
+        app.words.some(word => text.includes(word))
+    );
+
+    if (!selectedApp) {
+        return null;
+    }
+
+    const bridge = getPowninAndroidBridge();
+
+    if (!bridge || typeof bridge.openApp !== "function") {
+        return getReply(
+            language,
+            "Android App Control is unavailable.",
+            "Android App Control এখন উপলব্ধ নয়।",
+            "Android App Control अभी उपलब्ध नहीं है।"
+        );
+    }
+
+    try {
+
+        const result = bridge.openApp(selectedApp.name);
+
+        if (result === "OPENING") {
+            return getReply(
+                language,
+                "Opening " + selectedApp.name + ".",
+                selectedApp.name + " খোলা হচ্ছে।",
+                selectedApp.name + " खोला जा रहा है।"
+            );
+        }
+
+        if (result === "APP_NOT_FOUND") {
+            return getReply(
+                language,
+                selectedApp.name + " is not installed or unavailable.",
+                selectedApp.name + " অ্যাপটি পাওয়া যায়নি।",
+                selectedApp.name + " ऐप उपलब्ध नहीं है।"
+            );
+        }
+
+        return getReply(
+            language,
+            "Unable to open " + selectedApp.name + ".",
+            selectedApp.name + " খোলা যাচ্ছে না।",
+            selectedApp.name + " नहीं खुल पाया।"
+        );
+
+    } catch (error) {
+
+        console.error("POWNIN APP CONTROL ERROR:", error);
+
+        return getReply(
+            language,
+            "App Control error.",
+            "App Control-এ সমস্যা হয়েছে।",
+            "App Control में समस्या हुई।"
+        );
+    }
+}
+
+// ==========================================
 // 14. OFFLINE COMMAND ROUTER
 // ==========================================
 
