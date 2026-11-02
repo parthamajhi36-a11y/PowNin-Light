@@ -1591,11 +1591,6 @@ async function requestPowninOnlineAI(command, language) {
             }
         });
 
-        messages.push({
-            role: "user",
-            content: userCommand
-        });
-
         const headers = {
             "Content-Type": "application/json"
         };
