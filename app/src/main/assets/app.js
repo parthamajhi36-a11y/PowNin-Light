@@ -1,23 +1,24 @@
-/* =====================================================
-   POWNIN SMART BRAIN v3.1
-   PART 1/3 — CORE + OFFLINE BRAIN + MEMORY
-   Bengali | Hindi | English
-   Smart App Control integrated
-   ===================================================== */
+/* =========================================================
+   POWNIN SMART BRAIN v4.0
+   PART 1/3 — CORE + LANGUAGE + MEMORY + OFFLINE BRAIN
+   Bengali | Hindi | English | Banglish
+   ========================================================= */
 
 "use strict";
 
 // ==========================================
-// 1. APP CONFIGURATION
+// 1. CONFIGURATION
 // ==========================================
 
-const POWNIN_VERSION = "3.1";
-const MAX_HISTORY = 30;
-const MEMORY_KEY = "POWNIN_CONVERSATION_MEMORY";
+const POWNIN_VERSION = "4.0";
+const MAX_HISTORY = 40;
+const MAX_COMMAND_LENGTH = 2000;
+const MEMORY_KEY = "POWNIN_V4_MEMORY";
+const SETTINGS_KEY = "POWNIN_V4_SETTINGS";
 
 let conversationHistory = [];
 let speechEnabled = true;
-let currentMode = "offline";
+let currentMode = "hybrid";
 let selectedLanguage = "auto";
 let lastDetectedLanguage = "en";
 let isProcessing = false;
@@ -46,19 +47,20 @@ const modeButtons = {
 };
 
 // ==========================================
-// 3. STATUS + ANIMATION
+// 3. STATUS SYSTEM
 // ==========================================
 
 function setStatus(message) {
     if (statusText) {
-        statusText.textContent = String(message);
+        statusText.textContent = String(message || "");
     }
 }
 
 function setAssistantState(state) {
+    const value = String(state || "SYSTEM READY");
+
     if (assistantState) {
-        assistantState.textContent =
-            String(state || "SYSTEM READY");
+        assistantState.textContent = value;
     }
 
     if (mascotFrame) {
@@ -68,11 +70,11 @@ function setAssistantState(state) {
             "speaking"
         );
 
-        if (state === "LISTENING") {
+        if (value === "LISTENING") {
             mascotFrame.classList.add("listening");
-        } else if (state === "THINKING") {
+        } else if (value === "THINKING") {
             mascotFrame.classList.add("thinking");
-        } else if (state === "SPEAKING") {
+        } else if (value === "SPEAKING") {
             mascotFrame.classList.add("speaking");
         }
     }
@@ -87,6 +89,13 @@ function setReadyState() {
 // 4. LANGUAGE SYSTEM
 // ==========================================
 
+function normalizeText(text) {
+    return String(text || "")
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, " ");
+}
+
 function detectLanguage(text) {
     const value = String(text || "");
 
@@ -97,6 +106,15 @@ function detectLanguage(text) {
     if (/[\u0900-\u097F]/.test(value)) {
         return "hi";
     }
+
+    const banglaWords =
+        /\b(tomar|tomar|amar|amake|tumi|kemon|acho|achho|nam|name|ki|kothay|bolo|bolbe|korbo|koro|kholo|bondho|shomoy|somoy|dhonnobad|bhalo|valo|ami|hobe|chai)\b/i;
+
+    const hindiWords =
+        /\b(mera|meri|mujhe|tumhara|aapka|kaise|kya|hai|haan|nahi|kholo|band|samay|shukriya)\b/i;
+
+    if (banglaWords.test(value)) return "bn";
+    if (hindiWords.test(value)) return "hi";
 
     return "en";
 }
@@ -115,30 +133,26 @@ function getActiveLanguage(text) {
     return detectLanguage(text);
 }
 
+function getLanguage(text) {
+    return getActiveLanguage(text);
+}
+
 function getReply(language, english, bengali, hindi) {
     if (language === "bn") return bengali;
     if (language === "hi") return hindi;
     return english;
 }
 
-function normalizeText(text) {
-    return String(text || "")
-        .trim()
-        .toLowerCase()
-        .replace(/\s+/g, " ");
-}
-
 // ==========================================
-// 5. CHAT MESSAGE SYSTEM
+// 5. CHAT DISPLAY
 // ==========================================
 
 function addMessage(message, type) {
     if (!chat) return;
 
     const item = document.createElement("div");
-
     item.className = "message " + type;
-    item.textContent = String(message);
+    item.textContent = String(message || "");
 
     chat.appendChild(item);
     chat.scrollTop = chat.scrollHeight;
@@ -153,8 +167,52 @@ function showBotMessage(message) {
 }
 
 // ==========================================
-// 6. CONVERSATION MEMORY
+// 6. SMART MEMORY
 // ==========================================
+
+function loadSettings() {
+    try {
+        const saved = localStorage.getItem(SETTINGS_KEY);
+
+        if (!saved) return;
+
+        const settings = JSON.parse(saved);
+
+        if (
+            settings.language === "auto" ||
+            settings.language === "bn" ||
+            settings.language === "hi" ||
+            settings.language === "en"
+        ) {
+            selectedLanguage = settings.language;
+        }
+
+        if (
+            settings.mode === "offline" ||
+            settings.mode === "online" ||
+            settings.mode === "hybrid"
+        ) {
+            currentMode = settings.mode;
+        }
+
+    } catch (error) {
+        console.warn("Settings load error:", error);
+    }
+}
+
+function saveSettings() {
+    try {
+        localStorage.setItem(
+            SETTINGS_KEY,
+            JSON.stringify({
+                language: selectedLanguage,
+                mode: currentMode
+            })
+        );
+    } catch (error) {
+        console.warn("Settings save error:", error);
+    }
+}
 
 function loadConversationMemory() {
     try {
@@ -165,7 +223,14 @@ function loadConversationMemory() {
         const parsed = JSON.parse(saved);
 
         if (Array.isArray(parsed)) {
-            conversationHistory = parsed.slice(-MAX_HISTORY);
+            conversationHistory = parsed
+                .filter(item =>
+                    item &&
+                    typeof item.content === "string" &&
+                    (item.role === "user" ||
+                     item.role === "assistant")
+                )
+                .slice(-MAX_HISTORY);
         }
 
     } catch (error) {
@@ -182,7 +247,6 @@ function saveConversationMemory() {
                 conversationHistory.slice(-MAX_HISTORY)
             )
         );
-
     } catch (error) {
         console.warn("Memory saving error:", error);
     }
@@ -203,6 +267,10 @@ function saveConversation(role, content) {
     saveConversationMemory();
 }
 
+function getRecentContext() {
+    return conversationHistory.slice(-10);
+}
+
 function clearConversation() {
     conversationHistory = [];
 
@@ -212,18 +280,14 @@ function clearConversation() {
         console.warn("Memory clear error:", error);
     }
 
-    if (chat) {
-        chat.textContent = "";
-    }
-
-    const language = lastDetectedLanguage;
+    if (chat) chat.textContent = "";
 
     showBotMessage(
         getReply(
-            language,
-            "Chat history cleared. How can I help you?",
-            "চ্যাট হিস্ট্রি মুছে দেওয়া হয়েছে। কীভাবে সাহায্য করতে পারি?",
-            "चैट हिस्ट्री साफ कर दी गई है। मैं आपकी कैसे मदद कर सकता हूँ?"
+            lastDetectedLanguage,
+            "Chat history cleared.",
+            "চ্যাট হিস্ট্রি মুছে দেওয়া হয়েছে।",
+            "चैट हिस्ट्री साफ कर दी गई है।"
         )
     );
 
@@ -231,28 +295,28 @@ function clearConversation() {
 }
 
 // ==========================================
-// 7. OFFLINE BRAIN — GREETINGS
+// 7. OFFLINE GREETINGS
 // ==========================================
 
 function handleGreeting(language) {
     return getReply(
         language,
         "Hello! I am PowNin. How can I help you?",
-        "হ্যালো! আমি PowNin। তোমাকে কীভাবে সাহায্য করতে পারি?",
+        "হ্যালো! আমি PowNin। কীভাবে সাহায্য করতে পারি?",
         "नमस्ते! मैं PowNin हूँ। आपकी कैसे मदद कर सकता हूँ?"
     );
 }
 
 // ==========================================
-// 8. OFFLINE BRAIN — IDENTITY
+// 8. IDENTITY
 // ==========================================
 
 function handleIdentity(language) {
     return getReply(
         language,
-        "I am PowNin, your personal Android AI assistant.",
-        "আমি PowNin, তোমার ব্যক্তিগত Android AI Assistant।",
-        "मैं PowNin हूँ, आपका व्यक्तिगत Android AI Assistant।"
+        "I am PowNin, your Android AI assistant.",
+        "আমি PowNin, তোমার Android AI Assistant।",
+        "मैं PowNin हूँ, आपका Android AI Assistant।"
     );
 }
 
@@ -262,7 +326,11 @@ function handleIdentity(language) {
 
 function handleTime(language) {
     const time = new Date().toLocaleTimeString(
-        getLanguageCode(language)
+        getLanguageCode(language),
+        {
+            hour: "numeric",
+            minute: "2-digit"
+        }
     );
 
     return getReply(
@@ -298,69 +366,59 @@ function handleDate(language) {
 function handleHelp(language) {
     return getReply(
         language,
-        "I can help with greetings, date, time, calculations and basic offline commands. More Android features are being developed.",
-        "আমি greeting, তারিখ, সময়, হিসাব ও সাধারণ offline command-এ সাহায্য করতে পারি। আরও Android ফিচার তৈরি হচ্ছে।",
-        "मैं अभिवादन, तारीख, समय, गणना और सामान्य offline commands में मदद कर सकता हूँ। अन्य Android सुविधाएँ तैयार हो रही हैं।"
+        "I can help with time, date, calculations, voice commands, app controls and supported Android features.",
+        "আমি সময়, তারিখ, হিসাব, voice command, app control এবং সমর্থিত Android feature-এ সাহায্য করতে পারি।",
+        "मैं समय, तारीख, गणना, voice command, app control और समर्थित Android सुविधाओं में मदद कर सकता हूँ।"
     );
 }
 
 // ==========================================
-// 11. THANKS
+// 11. LANGUAGE SELECTION
 // ==========================================
 
-function handleThanks(language) {
-    return getReply(
-        language,
-        "You're welcome! I am ready to help.",
-        "স্বাগতম! আমি সাহায্য করার জন্য প্রস্তুত।",
-        "आपका स्वागत है! मैं मदद के लिए तैयार हूँ।"
-    );
-}
-
-// ==========================================
-// 12. LANGUAGE SELECTION
-// ==========================================
-
-function handleLanguageCommand(text, language) {
-    const value = normalizeText(text);
+function handleLanguageCommand(command, language) {
+    const text = normalizeText(command);
 
     if (
-        value.includes("বাংলা ভাষা") ||
-        value.includes("বাংলায় কথা") ||
-        value.includes("bangla mode")
+        text.includes("bangla mode") ||
+        text.includes("বাংলা ভাষা") ||
+        text.includes("বাংলায় কথা")
     ) {
         selectedLanguage = "bn";
+        saveSettings();
         return "বাংলা ভাষা নির্বাচন করা হয়েছে।";
     }
 
     if (
-        value.includes("हिंदी भाषा") ||
-        value.includes("हिंदी में") ||
-        value.includes("hindi mode")
+        text.includes("hindi mode") ||
+        text.includes("हिंदी भाषा")
     ) {
         selectedLanguage = "hi";
+        saveSettings();
         return "हिंदी भाषा चुनी गई है।";
     }
 
     if (
-        value.includes("english mode") ||
-        value.includes("speak english")
+        text.includes("english mode") ||
+        text.includes("speak english")
     ) {
         selectedLanguage = "en";
+        saveSettings();
         return "English language selected.";
     }
 
     if (
-        value === "auto language" ||
-        value === "automatic language"
+        text === "auto language" ||
+        text === "automatic language"
     ) {
         selectedLanguage = "auto";
+        saveSettings();
 
         return getReply(
             language,
             "Automatic language detection enabled.",
             "স্বয়ংক্রিয় ভাষা শনাক্তকরণ চালু হয়েছে।",
-            "स्वचालित भाषा पहचान चालू कर दी गई है।"
+            "स्वचालित भाषा पहचान चालू हो गई है।"
         );
     }
 
@@ -368,15 +426,13 @@ function handleLanguageCommand(text, language) {
 }
 
 // ==========================================
-// 13. CALCULATOR INTEGRATION
+// 12. CALCULATOR INTEGRATION
 // ==========================================
 
 function handleCalculation(command, language) {
     const math = window.PowninMath;
 
-    if (!math) {
-        return null;
-    }
+    if (!math) return null;
 
     try {
         if (typeof math.solve === "function") {
@@ -419,137 +475,15 @@ function handleCalculation(command, language) {
             }
         }
 
-        return null;
-
     } catch (error) {
-        console.error("Pownin Math Error:", error);
-        return null;
+        console.error("Math error:", error);
     }
+
+    return null;
 }
 
 // ==========================================
-// 14. SMART APP CONTROL v1.0
-// ==========================================
-
-function handleAppCommand(command, language) {
-
-    const text = normalizeText(command);
-
-    const apps = [
-        {
-            name: "youtube",
-            words: ["youtube", "ইউটিউব", "यूट्यूब"]
-        },
-        {
-            name: "whatsapp",
-            words: ["whatsapp", "হোয়াটসঅ্যাপ", "व्हाट्सएप"]
-        },
-        {
-            name: "chrome",
-            words: ["chrome", "google chrome", "ক্রোম"]
-        },
-        {
-            name: "maps",
-            words: ["google maps", "maps", "ম্যাপস", "मैप्स"]
-        },
-        {
-            name: "settings",
-            words: ["settings", "সেটিংস", "सेटिंग्स"]
-        },
-        {
-            name: "camera",
-            words: ["camera", "ক্যামেরা", "कैमरा"]
-        },
-        {
-            name: "calculator",
-            words: ["calculator", "ক্যালকুলেটর", "कैलकुलेटर"]
-        },
-        {
-            name: "phone",
-            words: ["phone", "dialer", "ফোন", "फोन"]
-        },
-        {
-            name: "files",
-            words: ["file manager", "files", "ফাইল", "फ़ाइल"]
-        }
-    ];
-
-    const hasOpenCommand =
-        /\b(open|launch|start|kholo|khul|chalu koro)\b/i.test(text) ||
-        text.includes("খোলো") ||
-        text.includes("খুলে দাও") ||
-        text.includes("চালু করো") ||
-        text.includes("खोलो") ||
-        text.includes("खोल दो") ||
-        text.includes("शुरू करो");
-
-    if (!hasOpenCommand) {
-        return null;
-    }
-
-    const selectedApp = apps.find(function(app) {
-        return app.words.some(function(word) {
-            return text.includes(word);
-        });
-    });
-
-    if (!selectedApp) {
-        return null;
-    }
-
-    const bridge = getPowninAndroidBridge();
-
-    if (!bridge || typeof bridge.openApp !== "function") {
-        return getReply(
-            language,
-            "Android App Control is unavailable.",
-            "Android App Control এখন উপলব্ধ নয়।",
-            "Android App Control अभी उपलब्ध नहीं है।"
-        );
-    }
-
-    try {
-        const result = bridge.openApp(selectedApp.name);
-
-        if (result === "OPENING") {
-            return getReply(
-                language,
-                "Opening " + selectedApp.name + ".",
-                selectedApp.name + " খোলা হচ্ছে।",
-                selectedApp.name + " खोला जा रहा है।"
-            );
-        }
-
-        if (result === "APP_NOT_FOUND") {
-            return getReply(
-                language,
-                selectedApp.name + " is not installed or unavailable.",
-                selectedApp.name + " অ্যাপটি পাওয়া যায়নি।",
-                selectedApp.name + " ऐप उपलब्ध नहीं है।"
-            );
-        }
-
-        return getReply(
-            language,
-            "Unable to open " + selectedApp.name + ".",
-            selectedApp.name + " খোলা যাচ্ছে না।",
-            selectedApp.name + " नहीं खुल पाया।"
-        );
-
-    } catch (error) {
-        console.error("POWNIN APP CONTROL ERROR:", error);
-
-        return getReply(
-            language,
-            "App Control error.",
-            "App Control-এ সমস্যা হয়েছে।",
-            "App Control में समस्या हुई।"
-        );
-    }
-}
-
-// ==========================================
-// 15. OFFLINE COMMAND ROUTER
+// 13. OFFLINE COMMAND ROUTER
 // ==========================================
 
 function getOfflineReply(command) {
@@ -560,12 +494,11 @@ function getOfflineReply(command) {
         return getReply(
             language,
             "Please enter a message.",
-            "অনুগ্রহ করে কিছু লিখো।",
+            "কিছু লিখে পাঠাও।",
             "कृपया कुछ लिखें।"
         );
     }
 
-    // Language selection
     const languageReply =
         handleLanguageCommand(text, language);
 
@@ -573,72 +506,62 @@ function getOfflineReply(command) {
         return languageReply;
     }
 
-    // Greetings
-    if (
-        /^(hi|hello|hey|হ্যালো|হাই|নমস্কার|नमस्ते|हेलो)$/i.test(text)
-    ) {
+    if (/^(hi|hello|hey|হ্যালো|হাই|नमस्ते|हेलो)$/i.test(text)) {
         return handleGreeting(language);
     }
 
-    // Identity
     if (
-        text.includes("who are you") ||
-        text.includes("your name") ||
+        /\b(who are you|your name)\b/.test(text) ||
+        /\b(tomar nam ki|tomar name ki|tomar naam ki)\b/.test(text) ||
         text.includes("তুমি কে") ||
         text.includes("তোমার নাম") ||
-        text.includes("তোমার নাম কি") ||
         text.includes("आप कौन हैं") ||
-        text.includes("तुम कौन हो") ||
         text.includes("तुम्हारा नाम")
     ) {
         return handleIdentity(language);
     }
 
-    // Time
     if (
-        /\btime\b/i.test(text) ||
+        /\b(time|somoy|shomoy)\b/.test(text) ||
         text.includes("সময়") ||
         text.includes("সময়") ||
-        text.includes("সময় কত") ||
         text.includes("समय")
     ) {
         return handleTime(language);
     }
 
-    // Date
     if (
-        /\b(date|today)\b/i.test(text) ||
+        /\b(date|today)\b/.test(text) ||
         text.includes("আজ") ||
         text.includes("তারিখ") ||
-        text.includes("আজকে") ||
         text.includes("आज") ||
         text.includes("तारीख")
     ) {
         return handleDate(language);
     }
 
-    // Help
     if (
         text === "help" ||
         text.includes("সাহায্য") ||
-        text.includes("মদদ") ||
         text.includes("मदद")
     ) {
         return handleHelp(language);
     }
 
-    // Thanks
     if (
         text.includes("thank you") ||
         text.includes("thanks") ||
         text.includes("ধন্যবাদ") ||
-        text.includes("शुक्रिया") ||
-        text.includes("धन्यवाद")
+        text.includes("शुक्रिया")
     ) {
-        return handleThanks(language);
+        return getReply(
+            language,
+            "You're welcome!",
+            "স্বাগতম!",
+            "आपका स्वागत है!"
+        );
     }
 
-    // Calculator
     const calculation =
         handleCalculation(command, language);
 
@@ -646,12 +569,11 @@ function getOfflineReply(command) {
         return calculation;
     }
 
-    // Unknown command
     return getReply(
         language,
-        "I don't know that yet. My offline brain is still learning. Online AI is not configured yet.",
-        "এই প্রশ্নের উত্তর এখনো আমার জানা নেই। আমার Offline Brain আরও শিখছে। Online AI এখনো যুক্ত করা হয়নি।",
-        "मुझे अभी इसका उत्तर नहीं पता। मेरा Offline Brain अभी सीख रहा है। Online AI अभी कॉन्फ़िगर नहीं हुआ है।"
+        "I don't know that yet. My offline brain is still learning.",
+        "এই প্রশ্নের উত্তর এখনো আমার জানা নেই। আমার Offline Brain আরও শিখছে।",
+        "मुझे अभी इसका उत्तर नहीं पता। मेरा Offline Brain अभी सीख रहा है।"
     );
 }
 
@@ -660,277 +582,709 @@ function getOfflineReply(command) {
 // APPEND PART 2 BELOW THIS LINE
 // ==========================================
 
+
 /* =========================================================
-   POWNIN SMART BRAIN v3.1
-   PART 2/3 — NATIVE ANDROID VOICE ENGINE
+   POWNIN SMART BRAIN v4.0
+   PART 2/3 — ANDROID BRIDGE + VOICE + APP CONTROL
    ========================================================= */
 
 // ==========================================
-// 15. ANDROID BRIDGE CHECK
+// 14. ANDROID BRIDGE
 // ==========================================
 
 function getPowninAndroidBridge() {
     try {
         if (
             window.PowninAndroid &&
-            typeof window.PowninAndroid.speak === "function" &&
-            typeof window.PowninAndroid.startListening === "function"
+            typeof window.PowninAndroid === "object"
         ) {
             return window.PowninAndroid;
         }
-
     } catch (error) {
-        console.warn("Android bridge error:", error);
+        console.warn("Android bridge unavailable:", error);
     }
 
     return null;
 }
 
-// ==========================================
-// 16. VOICE LANGUAGE
-// ==========================================
-
-function getVoiceLanguage(text) {
-    if (selectedLanguage !== "auto") {
-        return getLanguageCode(selectedLanguage);
-    }
-
-    const detected = detectLanguage(text || "");
-
-    lastDetectedLanguage = detected;
-
-    return getLanguageCode(detected);
-}
-
-function getListeningLanguage() {
-    if (selectedLanguage !== "auto") {
-        return getLanguageCode(selectedLanguage);
-    }
-
-    return getLanguageCode(lastDetectedLanguage);
-}
-
-// ==========================================
-// 17. NATIVE TEXT TO SPEECH
-// ==========================================
-
-function speakReply(message) {
-    if (!speechEnabled) return;
-
-    const text = String(message || "").trim();
-
-    if (!text) return;
-
+function isAndroidBridgeReady() {
     const bridge = getPowninAndroidBridge();
 
-    if (!bridge) {
-        console.warn("Native Android voice bridge unavailable.");
-        setStatus("VOICE UNAVAILABLE");
-        setAssistantState("SYSTEM READY");
-        return;
+    return !!(
+        bridge &&
+        typeof bridge.speak === "function"
+    );
+}
+
+function callAndroidMethod(methodName, ...args) {
+    const bridge = getPowninAndroidBridge();
+
+    if (
+        !bridge ||
+        typeof bridge[methodName] !== "function"
+    ) {
+        return {
+            success: false,
+            message: "Android feature is not available yet."
+        };
     }
 
     try {
-        const language = getVoiceLanguage(text);
+        const result = bridge[methodName](...args);
 
-        setAssistantState("SPEAKING");
-        setStatus("VOICE OUTPUT");
-
-        bridge.speak(text, language);
-
-        isSpeaking = true;
+        return {
+            success: true,
+            result: result
+        };
 
     } catch (error) {
-        console.error("Native TTS error:", error);
-
-        isSpeaking = false;
-
-        setStatus("VOICE ERROR");
-        setAssistantState("SYSTEM READY");
-    }
-}
-
-// ==========================================
-// 18. STOP NATIVE VOICE
-// ==========================================
-
-function stopPowninVoice() {
-    speechEnabled = false;
-    isSpeaking = false;
-
-    const bridge = getPowninAndroidBridge();
-
-    try {
-        if (bridge) {
-            bridge.stopSpeaking();
-            bridge.stopListening();
-        }
-
-    } catch (error) {
-        console.warn("Voice stop error:", error);
-    }
-
-    isListening = false;
-
-    setStatus("VOICE STOPPED");
-    setAssistantState("SYSTEM READY");
-}
-
-// ==========================================
-// 19. ENABLE VOICE
-// ==========================================
-
-function enablePowninVoice() {
-    speechEnabled = true;
-
-    setStatus("VOICE READY");
-    setAssistantState("SYSTEM READY");
-}
-
-// ==========================================
-// 20. START NATIVE MICROPHONE
-// ==========================================
-
-function startPowninListening() {
-    const bridge = getPowninAndroidBridge();
-
-    if (!bridge) {
-        setStatus("VOICE NOT CONNECTED");
-
-        showBotMessage(
-            getReply(
-                lastDetectedLanguage,
-                "Native Android microphone is unavailable.",
-                "Native Android মাইক্রোফোন সংযুক্ত নেই।",
-                "Native Android माइक्रोफोन उपलब्ध नहीं है।"
-            )
+        console.error(
+            "Android method error:",
+            methodName,
+            error
         );
 
-        return;
-    }
-
-    try {
-        speechEnabled = true;
-
-        const language = getListeningLanguage();
-
-        setStatus("LISTENING");
-        setAssistantState("LISTENING");
-
-        isListening = true;
-
-        bridge.startListening(language);
-
-    } catch (error) {
-        console.error("Microphone start error:", error);
-
-        isListening = false;
-
-        setStatus("MICROPHONE ERROR");
-        setAssistantState("SYSTEM READY");
+        return {
+            success: false,
+            message: error.message || "Android operation failed."
+        };
     }
 }
 
 // ==========================================
-// 21. NATIVE SPEECH RESULT CALLBACK
+// 15. VOICE CONFIGURATION
 // ==========================================
 
-window.onNativeSpeechResult = function(text) {
-    const spokenText = String(text || "").trim();
+let voiceStyle = "gaming";
+let voiceRate = 0.94;
+let voicePitch = 0.90;
 
-    isListening = false;
+function setVoiceStyle(style) {
+    const allowed = [
+        "normal",
+        "gaming",
+        "calm"
+    ];
 
-    setAssistantState("THINKING");
-    setStatus("PROCESSING");
+    if (!allowed.includes(style)) {
+        return false;
+    }
 
-    if (!spokenText) {
+    voiceStyle = style;
+
+    const bridge = getPowninAndroidBridge();
+
+    if (
+        bridge &&
+        typeof bridge.setVoiceStyle === "function"
+    ) {
+        try {
+            bridge.setVoiceStyle(style);
+        } catch (error) {
+            console.warn("Voice style setting failed:", error);
+        }
+    }
+
+    return true;
+}
+
+function getVoiceSettings() {
+    return {
+        style: voiceStyle,
+        rate: voiceRate,
+        pitch: voicePitch
+    };
+}
+
+// ==========================================
+// 16. LANGUAGE-AWARE SPEECH
+// ==========================================
+
+function speak(text, language) {
+    if (!speechEnabled) return;
+
+    const message = String(text || "").trim();
+
+    if (!message) return;
+
+    const activeLanguage =
+        language || getActiveLanguage(message);
+
+    const languageCode =
+        getLanguageCode(activeLanguage);
+
+    const bridge = getPowninAndroidBridge();
+
+    if (bridge && typeof bridge.speak === "function") {
+        try {
+            isSpeaking = true;
+            setAssistantState("SPEAKING");
+
+            // Existing bridge accepts text and language.
+            bridge.speak(message, languageCode);
+
+            return;
+
+        } catch (error) {
+            console.warn("Native TTS failed:", error);
+            isSpeaking = false;
+        }
+    }
+
+    // Browser speech fallback.
+    if (
+        "speechSynthesis" in window &&
+        typeof SpeechSynthesisUtterance !== "undefined"
+    ) {
+        try {
+            window.speechSynthesis.cancel();
+
+            const utterance =
+                new SpeechSynthesisUtterance(message);
+
+            utterance.lang = languageCode;
+            utterance.rate = voiceRate;
+            utterance.pitch = voicePitch;
+
+            utterance.onend = function () {
+                isSpeaking = false;
+                setReadyState();
+            };
+
+            utterance.onerror = function () {
+                isSpeaking = false;
+                setReadyState();
+            };
+
+            window.speechSynthesis.speak(utterance);
+
+        } catch (error) {
+            console.error("Browser TTS error:", error);
+            isSpeaking = false;
+            setReadyState();
+        }
+    } else {
+        isSpeaking = false;
+        setReadyState();
+    }
+}
+
+function speakReply(message, language) {
+    speak(message, language);
+}
+
+// ==========================================
+// 17. STOP VOICE
+// ==========================================
+
+function stopSpeaking() {
+    const bridge = getPowninAndroidBridge();
+
+    if (
+        bridge &&
+        typeof bridge.stopSpeaking === "function"
+    ) {
+        try {
+            bridge.stopSpeaking();
+        } catch (error) {
+            console.warn("Native stop speaking failed:", error);
+        }
+    }
+
+    if ("speechSynthesis" in window) {
+        try {
+            window.speechSynthesis.cancel();
+        } catch (error) {
+            console.warn(error);
+        }
+    }
+
+    isSpeaking = false;
+    setReadyState();
+}
+
+// ==========================================
+// 18. SPEECH RECOGNITION
+// ==========================================
+
+function startListening(language) {
+    const bridge = getPowninAndroidBridge();
+
+    const activeLanguage =
+        language || selectedLanguage;
+
+    const languageCode =
+        activeLanguage === "auto"
+            ? getLanguageCode(lastDetectedLanguage)
+            : getLanguageCode(activeLanguage);
+
+    if (
+        bridge &&
+        typeof bridge.startListening === "function"
+    ) {
+        try {
+            isListening = true;
+            setAssistantState("LISTENING");
+            setStatus("LISTENING...");
+
+            bridge.startListening(languageCode);
+            return;
+
+        } catch (error) {
+            console.error("Native listening error:", error);
+            isListening = false;
+        }
+    }
+
+    // Browser fallback.
+    const SpeechRecognition =
+        window.SpeechRecognition ||
+        window.webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+        setStatus("Speech recognition is not supported.");
         setReadyState();
         return;
     }
 
-    lastDetectedLanguage = detectLanguage(spokenText);
-
-    if (input) {
-        input.value = spokenText;
-    }
-
-    if (typeof processCommand === "function") {
-        processCommand(spokenText);
-    }
-};
-
-// ==========================================
-// 22. NATIVE SPEECH ERROR CALLBACK
-// ==========================================
-
-window.onNativeSpeechError = function(message) {
-    console.warn("Native speech error:", message);
-
-    isListening = false;
-    isSpeaking = false;
-
-    setStatus("VOICE ERROR");
-    setAssistantState("SYSTEM READY");
-
-    const language = lastDetectedLanguage;
-
-    showBotMessage(
-        getReply(
-            language,
-            "Voice error: " + String(message || "Unknown error"),
-            "ভয়েস সমস্যা: " + String(message || "অজানা সমস্যা"),
-            "वॉइस समस्या: " + String(message || "अज्ञात समस्या")
-        )
-    );
-};
-
-// ==========================================
-// 23. NATIVE LISTENING CALLBACK
-// ==========================================
-
-window.onNativeListening = function() {
-    isListening = true;
-
-    setStatus("LISTENING");
-    setAssistantState("LISTENING");
-};
-
-// ==========================================
-// 24. NATIVE TTS READY CALLBACK
-// ==========================================
-
-window.onNativeTtsReady = function() {
-    console.log("POWNIN Native TTS Ready");
-
-    setStatus("VOICE READY");
-};
-
-// ==========================================
-// 25. VOICE ENGINE STATUS
-// ==========================================
-
-function isPowninVoiceAvailable() {
-    const bridge = getPowninAndroidBridge();
-
-    if (!bridge) return false;
-
     try {
-        return bridge.isVoiceReady() === true;
+        if (window.powninRecognition) {
+            try {
+                window.powninRecognition.stop();
+            } catch (error) {
+                // Previous recognition may already be stopped.
+            }
+        }
+
+        const recognition = new SpeechRecognition();
+
+        recognition.lang = languageCode;
+        recognition.continuous = false;
+        recognition.interimResults = false;
+        recognition.maxAlternatives = 1;
+
+        recognition.onstart = function () {
+            isListening = true;
+            setAssistantState("LISTENING");
+            setStatus("LISTENING...");
+        };
+
+        recognition.onresult = function (event) {
+            const result =
+                event.results &&
+                event.results[0] &&
+                event.results[0][0];
+
+            if (result && result.transcript) {
+                if (input) {
+                    input.value = result.transcript;
+                }
+
+                sendMessage(result.transcript);
+            }
+        };
+
+        recognition.onerror = function (event) {
+            console.warn(
+                "Speech recognition error:",
+                event.error
+            );
+
+            isListening = false;
+            setStatus("Voice recognition error.");
+            setReadyState();
+        };
+
+        recognition.onend = function () {
+            isListening = false;
+            setReadyState();
+        };
+
+        window.powninRecognition = recognition;
+        recognition.start();
 
     } catch (error) {
-        console.warn("Voice status error:", error);
-        return false;
+        console.error("Recognition start error:", error);
+        isListening = false;
+        setStatus("Could not start voice recognition.");
+        setReadyState();
     }
+}
+
+// ==========================================
+// 19. STOP LISTENING
+// ==========================================
+
+function stopListening() {
+    const bridge = getPowninAndroidBridge();
+
+    if (
+        bridge &&
+        typeof bridge.stopListening === "function"
+    ) {
+        try {
+            bridge.stopListening();
+        } catch (error) {
+            console.warn(error);
+        }
+    }
+
+    if (window.powninRecognition) {
+        try {
+            window.powninRecognition.stop();
+        } catch (error) {
+            console.warn(error);
+        }
+    }
+
+    isListening = false;
+    setReadyState();
+}
+
+// ==========================================
+// 20. APP CONTROL
+// ==========================================
+
+const POWNIN_APP_COMMANDS = {
+    youtube: [
+        "youtube",
+        "open youtube",
+        "খুলে দাও ইউটিউব",
+        "यूट्यूब खोलो"
+    ],
+
+    chrome: [
+        "chrome",
+        "open chrome",
+        "খোলো ক্রোম",
+        "क्रोम खोलो"
+    ],
+
+    whatsapp: [
+        "whatsapp",
+        "open whatsapp",
+        "হোয়াটসঅ্যাপ খোলো",
+        "व्हाट्सएप खोलो"
+    ],
+
+    maps: [
+        "maps",
+        "google maps",
+        "open maps",
+        "ম্যাপ খোলো",
+        "मैप खोलो"
+    ],
+
+    settings: [
+        "settings",
+        "open settings",
+        "সেটিংস খোলো",
+        "सेटिंग्स खोलो"
+    ],
+
+    camera: [
+        "camera",
+        "open camera",
+        "ক্যামেরা খোলো",
+        "कैमरा खोलो"
+    ],
+
+    calculator: [
+        "calculator",
+        "open calculator",
+        "ক্যালকুলেটর খোলো",
+        "कैलकुलेटर खोलो"
+    ],
+
+    phone: [
+        "phone",
+        "open phone",
+        "dialer",
+        "ফোন খোলো",
+        "फोन खोलो"
+    ],
+
+    files: [
+        "files",
+        "file manager",
+        "open files",
+        "ফাইল খোলো",
+        "फाइल खोलो"
+    ]
 };
 
+function findAppCommand(command) {
+    const text = normalizeText(command);
+
+    for (const appName of Object.keys(POWNIN_APP_COMMANDS)) {
+        const phrases = POWNIN_APP_COMMANDS[appName];
+
+        for (const phrase of phrases) {
+            if (text === normalizeText(phrase)) {
+                return appName;
+            }
+        }
+    }
+
+    return null;
+}
+
+function handleAppCommand(command) {
+    const appName = findAppCommand(command);
+
+    if (!appName) return null;
+
+    const bridge = getPowninAndroidBridge();
+
+    if (
+        !bridge ||
+        typeof bridge.openApp !== "function"
+    ) {
+        return getReply(
+            getActiveLanguage(command),
+            "App control is not connected to Android yet.",
+            "Android App Control এখনো সংযুক্ত হয়নি।",
+            "Android App Control अभी कनेक्ट नहीं है।"
+        );
+    }
+
+    try {
+        bridge.openApp(appName);
+
+        return getReply(
+            getActiveLanguage(command),
+            "Opening " + appName + ".",
+            appName + " খোলার চেষ্টা করছি।",
+            appName + " खोलने की कोशिश कर रहा हूँ।"
+        );
+
+    } catch (error) {
+        console.error("App launch error:", error);
+
+        return getReply(
+            getActiveLanguage(command),
+            "I could not open that app.",
+            "অ্যাপটি খুলতে পারলাম না।",
+            "मैं वह ऐप नहीं खोल पाया।"
+        );
+    }
+}
+
 // ==========================================
-// APP CONTROL ERROR CALLBACK
+// 21. MEDIA CONTROL INTERFACE
 // ==========================================
 
-window.onNativeAppError = function(message) {
-    console.warn("Native app control error:", message);
+function handleMediaCommand(command) {
+    const text = normalizeText(command);
 
-    setStatus("APP CONTROL ERROR");
+    let action = null;
+
+    if (
+        text === "play music" ||
+        text === "play" ||
+        text === "গান চালাও" ||
+        text === "गाना चलाओ"
+    ) {
+        action = "play";
+    } else if (
+        text === "pause music" ||
+        text === "pause" ||
+        text === "গান থামাও" ||
+        text === "गाना रोक दो"
+    ) {
+        action = "pause";
+    } else if (
+        text === "next song" ||
+        text === "next track" ||
+        text === "পরের গান" ||
+        text === "अगला गाना"
+    ) {
+        action = "next";
+    } else if (
+        text === "previous song" ||
+        text === "আগের গান" ||
+        text === "पिछला गाना"
+    ) {
+        action = "previous";
+    }
+
+    if (!action) return null;
+
+    const result =
+        callAndroidMethod("mediaControl", action);
+
+    const language = getActiveLanguage(command);
+
+    if (!result.success) {
+        return getReply(
+            language,
+            "Media control is not connected yet.",
+            "Media Control-এর Android অংশ এখনো তৈরি হয়নি।",
+            "Media Control का Android हिस्सा अभी तैयार नहीं है।"
+        );
+    }
+
+    return getReply(
+        language,
+        "Media command sent.",
+        "Media command পাঠানো হয়েছে।",
+        "Media command भेज दिया गया है।"
+    );
+}
+
+// ==========================================
+// 22. CALL INTEGRATION — SAFE DIALER ONLY
+// ==========================================
+
+function handleCallCommand(command) {
+    const text = normalizeText(command);
+
+    const callPhrases = [
+        "open dialer",
+        "open phone dialer",
+        "ফোন ডায়ালার খোলো",
+        "डायलर खोलो"
+    ];
+
+    if (!callPhrases.includes(text)) {
+        return null;
+    }
+
+    const result = callAndroidMethod("openDialer");
+
+    const language = getActiveLanguage(command);
+
+    if (!result.success) {
+        return getReply(
+            language,
+            "Phone dialer integration is not available yet.",
+            "Phone Dialer integration এখনো তৈরি হয়নি।",
+            "Phone Dialer integration अभी उपलब्ध नहीं है।"
+        );
+    }
+
+    return getReply(
+        language,
+        "Opening the phone dialer. You can review the number before calling.",
+        "Phone Dialer খুলছি। কল করার আগে নম্বর দেখে নেবে।",
+        "Phone Dialer खोल रहा हूँ। कॉल करने से पहले नंबर जाँच लें।"
+    );
+}
+
+// ==========================================
+// 23. NOTIFICATION FEATURE STATUS
+// ==========================================
+
+function getNotificationFeatureStatus() {
+    const result =
+        callAndroidMethod("isNotificationAccessEnabled");
+
+    if (!result.success) {
+        return {
+            available: false,
+            enabled: false
+        };
+    }
+
+    return {
+        available: true,
+        enabled: result.result === true
+    };
+}
+
+function handleNotificationCommand(command) {
+    const text = normalizeText(command);
+
+    const notificationWords = [
+        "read notifications",
+        "check notifications",
+        "নোটিফিকেশন পড়ো",
+        "নোটিফিকেশন দেখাও",
+        "नोटिफिकेशन पढ़ो",
+        "नोटिफिकेशन दिखाओ"
+    ];
+
+    if (!notificationWords.includes(text)) {
+        return null;
+    }
+
+    const language = getActiveLanguage(command);
+    const status = getNotificationFeatureStatus();
+
+    if (!status.available) {
+        return getReply(
+            language,
+            "Notification access is not integrated yet.",
+            "Notification Access-এর Android service এখনো যোগ করা হয়নি।",
+            "Notification Access की Android service अभी नहीं जोड़ी गई है।"
+        );
+    }
+
+    if (!status.enabled) {
+        return getReply(
+            language,
+            "Please enable notification access in Android settings.",
+            "Android Settings থেকে Notification Access অনুমতি চালু করতে হবে।",
+            "Android Settings में Notification Access की अनुमति चालू करनी होगी।"
+        );
+    }
+
+    const result = callAndroidMethod("readNotifications");
+
+    if (!result.success) {
+        return getReply(
+            language,
+            "Could not read notifications.",
+            "নোটিফিকেশন পড়তে পারলাম না।",
+            "नोटिफिकेशन पढ़ नहीं पाया।"
+        );
+    }
+
+    return String(result.result || "");
+}
+
+// ==========================================
+// 24. NATIVE SPEECH CALLBACKS
+// ==========================================
+
+window.onNativeSpeechResult = function (text) {
+    isListening = false;
+
+    const transcript = String(text || "").trim();
+
+    setReadyState();
+
+    if (!transcript) return;
+
+    if (input) {
+        input.value = transcript;
+    }
+
+    sendMessage(transcript);
+};
+
+window.onNativeSpeechError = function (error) {
+    isListening = false;
+
+    console.warn("Native speech error:", error);
+
+    setStatus("Voice recognition error.");
+    setReadyState();
+};
+
+window.onNativeAppError = function (error) {
+    console.warn("Native app error:", error);
+
+    setStatus(
+        String(error || "Android app operation failed.")
+    );
+
+    setReadyState();
+};
+
+window.onNativeTtsDone = function () {
+    isSpeaking = false;
+    setReadyState();
 };
 
 // ==========================================
@@ -940,98 +1294,73 @@ window.onNativeAppError = function(message) {
 
 
 /* =========================================================
-   POWNIN SMART BRAIN v3.1
-   PART 3/3 — COMMAND ROUTER + UI + INITIALIZATION
+   POWNIN SMART BRAIN v4.0
+   PART 3/3 — ADVANCED ROUTER + AI + UI + INITIALIZATION
    ========================================================= */
 
 // ==========================================
-// 26. MAIN COMMAND PROCESSOR
+// 25. ONLINE AI CONFIGURATION
 // ==========================================
 
-function processCommand(command) {
-    const text = String(command || "").trim();
+// IMPORTANT:
+// Do not put private API keys inside this Android app.
+// Configure a secure backend endpoint when one is available.
 
-    if (!text || isProcessing) return;
+const POWNIN_AI_ENDPOINT = "";
 
-    if (text.length > 2000) {
-        showBotMessage(
-            "Message is too long. Please use a shorter message."
+async function getOnlineReply(command, language) {
+    if (!POWNIN_AI_ENDPOINT) {
+        return getReply(
+            language,
+            "Online AI is not configured yet. I can still help with offline commands.",
+            "Online AI এখনো সংযুক্ত করা হয়নি। তবে Offline Command দিয়ে সাহায্য করতে পারি।",
+            "Online AI अभी कनेक्ट नहीं है। लेकिन Offline Command से मदद कर सकता हूँ।"
         );
-        return;
     }
 
-    isProcessing = true;
-
-    const language = getActiveLanguage(text);
-    lastDetectedLanguage = language;
-
-    showUserMessage(text);
-    saveConversation("user", text);
-
-    setStatus("THINKING");
-    setAssistantState("THINKING");
-
     try {
-        let reply = "";
-        let appReply = null;
+        const response = await fetch(POWNIN_AI_ENDPOINT, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                message: command,
+                language: language,
+                history: getRecentContext()
+            })
+        });
 
-        // APP CONTROL — runs before AI mode routing.
-        if (typeof handleAppCommand === "function") {
-            appReply = handleAppCommand(text, language);
+        if (!response.ok) {
+            throw new Error("AI server returned " + response.status);
         }
 
-        if (appReply !== null && appReply !== undefined) {
-            reply = String(appReply);
-        } else if (currentMode === "offline") {
-            reply = getOfflineReply(text);
-        } else {
-            reply = getOfflineReply(text);
+        const data = await response.json();
 
-            if (currentMode === "online") {
-                reply = getReply(
-                    language,
-                    "Online AI is not configured yet. Please use Offline mode.",
-                    "Online AI এখনো সংযুক্ত করা হয়নি। আপাতত Offline mode ব্যবহার করো।",
-                    "Online AI अभी कॉन्फ़िगर नहीं हुआ है। कृपया Offline mode इस्तेमाल करें।"
-                );
-            } else if (currentMode === "hybrid") {
-                reply = getReply(
-                    language,
-                    "Hybrid mode is selected, but its online AI service is not configured yet. I can still answer basic offline commands.",
-                    "Hybrid mode নির্বাচন করা হয়েছে, কিন্তু Online AI service এখনো যুক্ত হয়নি। আমি সাধারণ Offline command-এর উত্তর দিতে পারি।",
-                    "Hybrid mode चुना गया है, लेकिन Online AI service अभी कॉन्फ़िगर नहीं हुई है। मैं सामान्य Offline commands का जवाब दे सकता हूँ।"
-                );
-            }
+        if (
+            data &&
+            typeof data.reply === "string" &&
+            data.reply.trim()
+        ) {
+            return data.reply.trim();
         }
 
-        showBotMessage(reply);
-        saveConversation("assistant", reply);
-
-        setStatus("READY");
-
-        if (speechEnabled) {
-            speakReply(reply);
-        } else {
-            setAssistantState("SYSTEM READY");
-        }
+        throw new Error("Invalid AI response");
 
     } catch (error) {
-        console.error("POWNIN COMMAND ERROR:", error);
+        console.error("Online AI error:", error);
 
-        showBotMessage(
-            "Sorry, something went wrong. Please try again."
+        return getReply(
+            language,
+            "I could not connect to Online AI. Please try again later.",
+            "Online AI-এর সঙ্গে সংযোগ করা যাচ্ছে না। পরে আবার চেষ্টা করো।",
+            "Online AI से कनेक्शन नहीं हो पाया। बाद में फिर कोशिश करें।"
         );
-
-        setStatus("ERROR");
-        setAssistantState("SYSTEM READY");
-
-    } finally {
-        isProcessing = false;
     }
 }
 
 // ==========================================
-// 27. AI MODE SYSTEM
+// 26. MODE SYSTEM
 // ==========================================
 
 function setPowninMode(mode) {
@@ -1046,240 +1375,438 @@ function setPowninMode(mode) {
     }
 
     currentMode = mode;
+    saveSettings();
 
     if (modeLabel) {
-        modeLabel.textContent = mode.toUpperCase();
+        modeLabel.textContent =
+            mode.toUpperCase() + " MODE";
     }
 
-    Object.keys(modeButtons).forEach(function(key) {
+    Object.keys(modeButtons).forEach(function (key) {
         const button = modeButtons[key];
 
-        if (!button) return;
-
-        button.classList.toggle(
-            "active",
-            key === mode
-        );
+        if (button) {
+            button.classList.toggle(
+                "active",
+                key === mode
+            );
+        }
     });
 
-    setStatus("MODE: " + mode.toUpperCase());
-
-    if (mode === "offline") {
-        showBotMessage(
-            getReply(
-                lastDetectedLanguage,
-                "Offline mode activated.",
-                "Offline mode চালু হয়েছে।",
-                "Offline mode चालू हो गया है।"
-            )
-        );
-
-    } else if (mode === "online") {
-        showBotMessage(
-            getReply(
-                lastDetectedLanguage,
-                "Online mode selected. Online AI service is not configured yet.",
-                "Online mode নির্বাচন করা হয়েছে। Online AI service এখনো যুক্ত হয়নি।",
-                "Online mode चुना गया है। Online AI service अभी कॉन्फ़िगर नहीं हुई है।"
-            )
-        );
-
-    } else {
-        showBotMessage(
-            getReply(
-                lastDetectedLanguage,
-                "Hybrid mode selected. Online AI service is not configured yet.",
-                "Hybrid mode নির্বাচন করা হয়েছে। Online AI service এখনো যুক্ত হয়নি।",
-                "Hybrid mode चुना गया है। Online AI service अभी कॉन्फ़िगर नहीं हुई है।"
-            )
-        );
-    }
-
-    setAssistantState("SYSTEM READY");
+    setStatus(mode.toUpperCase() + " MODE ENABLED");
 
     return true;
 }
 
-// ==========================================
-// 28. SEND MESSAGE
-// ==========================================
+function handleModeCommand(command, language) {
+    const text = normalizeText(command);
 
-function sendMessage() {
-    if (!input) return;
-
-    const message = input.value.trim();
-
-    if (!message) return;
-
-    input.value = "";
-
-    processCommand(message);
-}
-
-// ==========================================
-// 29. MODE BUTTON EVENTS
-// ==========================================
-
-if (modeButtons.offline) {
-    modeButtons.offline.addEventListener("click", function() {
+    if (
+        text === "offline mode" ||
+        text === "অফলাইন মোড" ||
+        text === "ऑफलाइन मोड"
+    ) {
         setPowninMode("offline");
-    });
-}
 
-if (modeButtons.online) {
-    modeButtons.online.addEventListener("click", function() {
-        setPowninMode("online");
-    });
-}
-
-if (modeButtons.hybrid) {
-    modeButtons.hybrid.addEventListener("click", function() {
-        setPowninMode("hybrid");
-    });
-}
-
-// ==========================================
-// 30. SEND BUTTON EVENT
-// ==========================================
-
-if (sendBtn) {
-    sendBtn.addEventListener("click", sendMessage);
-}
-
-if (input) {
-    input.addEventListener("keydown", function(event) {
-        if (event.key === "Enter") {
-            event.preventDefault();
-            sendMessage();
-        }
-    });
-}
-
-// ==========================================
-// 31. VOICE BUTTON EVENT
-// ==========================================
-
-if (voiceBtn) {
-    voiceBtn.addEventListener("click", function() {
-        startPowninListening();
-    });
-}
-
-// ==========================================
-// 32. STOP BUTTON EVENT
-// ==========================================
-
-if (stopBtn) {
-    stopBtn.addEventListener("click", function() {
-        stopPowninVoice();
-    });
-}
-
-// ==========================================
-// 33. CLEAR CHAT EVENT
-// ==========================================
-
-const clearChatButton = document.getElementById("clearChatBtn");
-
-if (clearChatButton) {
-    clearChatButton.addEventListener("click", function() {
-        clearConversation();
-        restoreConversationDisplay();
-    });
-}
-
-// ==========================================
-// 34. RESTORE CHAT MEMORY
-// ==========================================
-
-function restoreConversationDisplay() {
-    if (!chat) return;
-
-    chat.textContent = "";
-
-    conversationHistory.forEach(function(item) {
-        if (!item || !item.role) return;
-
-        const type =
-            item.role === "user" ? "user" : "bot";
-
-        addMessage(item.content, type);
-    });
-
-    if (conversationHistory.length === 0) {
-        showBotMessage(
-            "Hello! How can I help you today?"
+        return getReply(
+            language,
+            "Offline mode enabled.",
+            "Offline Mode চালু হয়েছে।",
+            "Offline Mode चालू हो गया है।"
         );
+    }
+
+    if (
+        text === "online mode" ||
+        text === "অনলাইন মোড" ||
+        text === "ऑनलाइन मोड"
+    ) {
+        setPowninMode("online");
+
+        return getReply(
+            language,
+            "Online mode enabled.",
+            "Online Mode চালু হয়েছে।",
+            "Online Mode चालू हो गया है।"
+        );
+    }
+
+    if (
+        text === "hybrid mode" ||
+        text === "হাইব্রিড মোড" ||
+        text === "हाइब्रिड मोड"
+    ) {
+        setPowninMode("hybrid");
+
+        return getReply(
+            language,
+            "Hybrid mode enabled.",
+            "Hybrid Mode চালু হয়েছে।",
+            "Hybrid Mode चालू हो गया है।"
+        );
+    }
+
+    return null;
+}
+
+// ==========================================
+// 27. STOP COMMANDS
+// ==========================================
+
+function handleStopCommand(command, language) {
+    const text = normalizeText(command);
+
+    const stopCommands = [
+        "stop",
+        "exit",
+        "stop voice",
+        "stop speaking",
+        "voice stop",
+        "বন্ধ করো",
+        "থামো",
+        "आवाज़ बंद करो",
+        "रुको"
+    ];
+
+    if (!stopCommands.includes(text)) {
+        return null;
+    }
+
+    stopSpeaking();
+    stopListening();
+
+    return getReply(
+        language,
+        "Stopped.",
+        "বন্ধ করা হয়েছে।",
+        "रोक दिया गया है।"
+    );
+}
+
+// ==========================================
+// 28. CLEAR CHAT COMMAND
+// ==========================================
+
+function handleClearCommand(command, language) {
+    const text = normalizeText(command);
+
+    const clearCommands = [
+        "clear chat",
+        "clear history",
+        "delete chat",
+        "চ্যাট পরিষ্কার করো",
+        "চ্যাট মুছে দাও",
+        "चैट साफ करो",
+        "चैट हटाओ"
+    ];
+
+    if (!clearCommands.includes(text)) {
+        return null;
+    }
+
+    clearConversation();
+
+    return getReply(
+        language,
+        "Chat cleared.",
+        "চ্যাট পরিষ্কার করা হয়েছে।",
+        "चैट साफ कर दी गई है।"
+    );
+}
+
+// ==========================================
+// 29. COMMAND ROUTER
+// ==========================================
+
+async function processCommand(rawCommand) {
+    const command = String(rawCommand || "").trim();
+
+    if (!command) {
+        setStatus("Please enter a command.");
+        return;
+    }
+
+    if (command.length > MAX_COMMAND_LENGTH) {
+        const language = getActiveLanguage(command);
+
+        showBotMessage(
+            getReply(
+                language,
+                "That message is too long.",
+                "মেসেজটি অনেক বড়।",
+                "यह संदेश बहुत लंबा है।"
+            )
+        );
+
+        return;
+    }
+
+    if (isProcessing) {
+        return;
+    }
+
+    const language = getActiveLanguage(command);
+    lastDetectedLanguage = language;
+
+    isProcessing = true;
+
+    showUserMessage(command);
+    saveConversation("user", command);
+
+    setAssistantState("THINKING");
+    setStatus("PROCESSING...");
+
+    try {
+        // 1. Stop commands
+        const stopReply =
+            handleStopCommand(command, language);
+
+        if (stopReply !== null) {
+            showBotMessage(stopReply);
+            saveConversation("assistant", stopReply);
+            speakReply(stopReply, language);
+            return;
+        }
+
+        // 2. Clear chat
+        const clearReply =
+            handleClearCommand(command, language);
+
+        if (clearReply !== null) {
+            speakReply(clearReply, language);
+            return;
+        }
+
+        // 3. Mode commands
+        const modeReply =
+            handleModeCommand(command, language);
+
+        if (modeReply !== null) {
+            showBotMessage(modeReply);
+            saveConversation("assistant", modeReply);
+            speakReply(modeReply, language);
+            return;
+        }
+
+        // 4. App commands
+        const appReply =
+            handleAppCommand(command);
+
+        if (appReply !== null) {
+            showBotMessage(appReply);
+            saveConversation("assistant", appReply);
+            speakReply(appReply, language);
+            return;
+        }
+
+        // 5. Media commands
+        const mediaReply =
+            handleMediaCommand(command);
+
+        if (mediaReply !== null) {
+            showBotMessage(mediaReply);
+            saveConversation("assistant", mediaReply);
+            speakReply(mediaReply, language);
+            return;
+        }
+
+        // 6. Safe phone dialer command
+        const callReply =
+            handleCallCommand(command);
+
+        if (callReply !== null) {
+            showBotMessage(callReply);
+            saveConversation("assistant", callReply);
+            speakReply(callReply, language);
+            return;
+        }
+
+        // 7. Notification commands
+        const notificationReply =
+            handleNotificationCommand(command);
+
+        if (notificationReply !== null) {
+            showBotMessage(notificationReply);
+            saveConversation("assistant", notificationReply);
+            speakReply(notificationReply, language);
+            return;
+        }
+
+        // 8. Offline mode
+        if (currentMode === "offline") {
+            const reply = getOfflineReply(command);
+
+            showBotMessage(reply);
+            saveConversation("assistant", reply);
+            speakReply(reply, language);
+
+            return;
+        }
+
+        // 9. Online / Hybrid mode
+        if (
+            currentMode === "online" ||
+            currentMode === "hybrid"
+        ) {
+            const onlineReply =
+                await getOnlineReply(command, language);
+
+            showBotMessage(onlineReply);
+            saveConversation("assistant", onlineReply);
+            speakReply(onlineReply, language);
+
+            return;
+        }
+
+        const fallback = getOfflineReply(command);
+
+        showBotMessage(fallback);
+        saveConversation("assistant", fallback);
+        speakReply(fallback, language);
+
+    } catch (error) {
+        console.error("Command processing error:", error);
+
+        const errorReply = getReply(
+            language,
+            "Something went wrong. Please try again.",
+            "একটি সমস্যা হয়েছে। আবার চেষ্টা করো।",
+            "कुछ गलत हुआ। कृपया फिर कोशिश करें।"
+        );
+
+        showBotMessage(errorReply);
+        speakReply(errorReply, language);
+
+    } finally {
+        isProcessing = false;
+
+        if (!isSpeaking && !isListening) {
+            setReadyState();
+        }
     }
 }
 
 // ==========================================
-// 35. APP INITIALIZATION
+// 30. SEND MESSAGE
+// ==========================================
+
+function sendMessage(optionalText) {
+    const command = String(
+        optionalText !== undefined
+            ? optionalText
+            : input
+                ? input.value
+                : ""
+    ).trim();
+
+    if (!command) return;
+
+    if (input && optionalText === undefined) {
+        input.value = "";
+    }
+
+    processCommand(command);
+}
+
+// ==========================================
+// 31. BUTTON EVENTS
+// ==========================================
+
+function initializeEventListeners() {
+    if (sendBtn) {
+        sendBtn.addEventListener("click", function () {
+            sendMessage();
+        });
+    }
+
+    if (input) {
+        input.addEventListener("keydown", function (event) {
+            if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                sendMessage();
+            }
+        });
+    }
+
+    if (voiceBtn) {
+        voiceBtn.addEventListener("click", function () {
+            if (isListening) {
+                stopListening();
+            } else {
+                startListening(selectedLanguage);
+            }
+        });
+    }
+
+    if (stopBtn) {
+        stopBtn.addEventListener("click", function () {
+            stopSpeaking();
+            stopListening();
+        });
+    }
+
+    if (modeButtons.offline) {
+        modeButtons.offline.addEventListener("click", function () {
+            setPowninMode("offline");
+        });
+    }
+
+    if (modeButtons.online) {
+        modeButtons.online.addEventListener("click", function () {
+            setPowninMode("online");
+        });
+    }
+
+    if (modeButtons.hybrid) {
+        modeButtons.hybrid.addEventListener("click", function () {
+            setPowninMode("hybrid");
+        });
+    }
+}
+
+// ==========================================
+// 32. INITIALIZATION
 // ==========================================
 
 function initializePownin() {
     try {
+        loadSettings();
         loadConversationMemory();
-        restoreConversationDisplay();
 
-        currentMode = "offline";
+        initializeEventListeners();
 
-        if (modeLabel) {
-            modeLabel.textContent = "OFFLINE";
-        }
-
-        Object.keys(modeButtons).forEach(function(key) {
-            if (!modeButtons[key]) return;
-
-            modeButtons[key].classList.toggle(
-                "active",
-                key === "offline"
-            );
-        });
+        setPowninMode(currentMode);
 
         setReadyState();
 
         console.log(
-            "POWNIN initialized. Version:",
-            POWNIN_VERSION
+            "PowNin Smart Brain v" +
+            POWNIN_VERSION +
+            " initialized."
         );
 
-        console.log(
-            "Calculator:",
-            window.PowninMath ? "AVAILABLE" : "NOT AVAILABLE"
+        const welcome = getReply(
+            lastDetectedLanguage,
+            "Hello! PowNin is ready.",
+            "হ্যালো! PowNin প্রস্তুত।",
+            "नमस्ते! PowNin तैयार है।"
         );
 
-        console.log(
-            "Android Bridge:",
-            getPowninAndroidBridge()
-                ? "AVAILABLE"
-                : "NOT AVAILABLE"
-        );
-
-        console.log(
-            "Native Voice:",
-            isPowninVoiceAvailable()
-                ? "READY"
-                : "WAITING"
-        );
+        showBotMessage(welcome);
 
     } catch (error) {
-        console.error(
-            "POWNIN INITIALIZATION ERROR:",
-            error
-        );
-
-        setStatus("INITIALIZATION ERROR");
+        console.error("PowNin initialization error:", error);
+        setStatus("Initialization failed.");
     }
 }
 
 // ==========================================
-// 36. GLOBAL ERROR HANDLING
+// 33. GLOBAL ERROR HANDLING
 // ==========================================
 
-window.addEventListener("error", function(event) {
+window.addEventListener("error", function (event) {
     console.error(
-        "POWNIN JAVASCRIPT ERROR:",
+        "PowNin JavaScript error:",
         event.message,
         event.filename,
         event.lineno
@@ -1288,27 +1815,28 @@ window.addEventListener("error", function(event) {
 
 window.addEventListener(
     "unhandledrejection",
-    function(event) {
+    function (event) {
         console.error(
-            "POWNIN PROMISE ERROR:",
+            "PowNin async error:",
             event.reason
         );
     }
 );
 
 // ==========================================
-// 37. START APPLICATION
+// 34. START APPLICATION
 // ==========================================
 
 if (document.readyState === "loading") {
     document.addEventListener(
         "DOMContentLoaded",
-        initializePownin
+        initializePownin,
+        { once: true }
     );
 } else {
     initializePownin();
 }
 
 // ==========================================
-// POWNIN SMART BRAIN v3.1 COMPLETE
+// POWNIN SMART BRAIN v4.0 END
 // ==========================================
