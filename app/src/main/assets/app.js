@@ -1643,11 +1643,9 @@ async function processCommand(rawCommand) {
             return;
         }
 
-        // 9. Online / Hybrid mode
-        if (
-            currentMode === "online" ||
-            currentMode === "hybrid"
-        ) {
+        // 9. ONLINE / HYBRID MODE
+
+        if (currentMode === "online") {
             const onlineReply =
                 await getOnlineReply(command, language);
 
@@ -1658,34 +1656,38 @@ async function processCommand(rawCommand) {
             return;
         }
 
-        const fallback = getOfflineReply(command);
+        if (currentMode === "hybrid") {
+            let onlineReply = null;
 
-        showBotMessage(fallback);
-        saveConversation("assistant", fallback);
-        speakReply(fallback, language);
+            try {
+                onlineReply =
+                    await getOnlineReply(command, language);
+            } catch (error) {
+                console.warn(
+                    "Online AI unavailable. Using offline brain.",
+                    error
+                );
+            }
 
-    } catch (error) {
-        console.error("Command processing error:", error);
+            if (
+                onlineReply &&
+                !onlineReply.includes("not configured") &&
+                !onlineReply.includes("unavailable")
+            ) {
+                showBotMessage(onlineReply);
+                saveConversation("assistant", onlineReply);
+                speakReply(onlineReply, language);
+            } else {
+                const offlineReply =
+                    getOfflineReply(command);
 
-        const errorReply = getReply(
-            language,
-            "Something went wrong. Please try again.",
-            "একটি সমস্যা হয়েছে। আবার চেষ্টা করো।",
-            "कुछ गलत हुआ। कृपया फिर कोशिश करें।"
-        );
+                showBotMessage(offlineReply);
+                saveConversation("assistant", offlineReply);
+                speakReply(offlineReply, language);
+            }
 
-        showBotMessage(errorReply);
-        speakReply(errorReply, language);
-
-    } finally {
-        isProcessing = false;
-
-        if (!isSpeaking && !isListening) {
-            setReadyState();
+            return;
         }
-    }
-}
-
 // ==========================================
 // 30. SEND MESSAGE
 // ==========================================
