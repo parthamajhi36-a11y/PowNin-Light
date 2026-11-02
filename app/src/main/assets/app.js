@@ -1,7 +1,8 @@
 /* =====================================================
-   POWNIN SMART BRAIN v3.0
+   POWNIN SMART BRAIN v3.1
    PART 1/3 — CORE + OFFLINE BRAIN + MEMORY
    Bengali | Hindi | English
+   Smart App Control integrated
    ===================================================== */
 
 "use strict";
@@ -10,7 +11,7 @@
 // 1. APP CONFIGURATION
 // ==========================================
 
-const POWNIN_VERSION = "3.0";
+const POWNIN_VERSION = "3.1";
 const MAX_HISTORY = 30;
 const MEMORY_KEY = "POWNIN_CONVERSATION_MEMORY";
 
@@ -378,7 +379,6 @@ function handleCalculation(command, language) {
     }
 
     try {
-        // First try the advanced solver.
         if (typeof math.solve === "function") {
             const solved = math.solve(command);
 
@@ -402,13 +402,14 @@ function handleCalculation(command, language) {
             }
         }
 
-        // Fallback to the basic calculator.
         if (typeof math.calculate === "function") {
             const result = math.calculate(command);
 
-            if (result !== null &&
+            if (
+                result !== null &&
                 result !== undefined &&
-                result !== false) {
+                result !== false
+            ) {
                 return getReply(
                     language,
                     "The answer is " + result,
@@ -427,7 +428,7 @@ function handleCalculation(command, language) {
 }
 
 // ==========================================
-// POWNIN SMART APP CONTROL v1.0
+// 14. SMART APP CONTROL v1.0
 // ==========================================
 
 function handleAppCommand(command, language) {
@@ -473,13 +474,8 @@ function handleAppCommand(command, language) {
         }
     ];
 
-    const openPatterns = [
-        /\b(open|launch|start)\b/i,
-        /\b(kholo|khul|khule dao|chalu koro)\b/i
-    ];
-
     const hasOpenCommand =
-        openPatterns.some(pattern => pattern.test(text)) ||
+        /\b(open|launch|start|kholo|khul|chalu koro)\b/i.test(text) ||
         text.includes("খোলো") ||
         text.includes("খুলে দাও") ||
         text.includes("চালু করো") ||
@@ -491,9 +487,11 @@ function handleAppCommand(command, language) {
         return null;
     }
 
-    const selectedApp = apps.find(app =>
-        app.words.some(word => text.includes(word))
-    );
+    const selectedApp = apps.find(function(app) {
+        return app.words.some(function(word) {
+            return text.includes(word);
+        });
+    });
 
     if (!selectedApp) {
         return null;
@@ -511,7 +509,6 @@ function handleAppCommand(command, language) {
     }
 
     try {
-
         const result = bridge.openApp(selectedApp.name);
 
         if (result === "OPENING") {
@@ -540,7 +537,6 @@ function handleAppCommand(command, language) {
         );
 
     } catch (error) {
-
         console.error("POWNIN APP CONTROL ERROR:", error);
 
         return getReply(
@@ -553,7 +549,7 @@ function handleAppCommand(command, language) {
 }
 
 // ==========================================
-// 14. OFFLINE COMMAND ROUTER
+// 15. OFFLINE COMMAND ROUTER
 // ==========================================
 
 function getOfflineReply(command) {
@@ -664,9 +660,8 @@ function getOfflineReply(command) {
 // APPEND PART 2 BELOW THIS LINE
 // ==========================================
 
-
 /* =========================================================
-   POWNIN SMART BRAIN v3.0
+   POWNIN SMART BRAIN v3.1
    PART 2/3 — NATIVE ANDROID VOICE ENGINE
    ========================================================= */
 
@@ -926,7 +921,17 @@ function isPowninVoiceAvailable() {
         console.warn("Voice status error:", error);
         return false;
     }
-}
+};
+
+// ==========================================
+// APP CONTROL ERROR CALLBACK
+// ==========================================
+
+window.onNativeAppError = function(message) {
+    console.warn("Native app control error:", message);
+
+    setStatus("APP CONTROL ERROR");
+};
 
 // ==========================================
 // PART 2 END
@@ -935,7 +940,7 @@ function isPowninVoiceAvailable() {
 
 
 /* =========================================================
-   POWNIN SMART BRAIN v3.0
+   POWNIN SMART BRAIN v3.1
    PART 3/3 — COMMAND ROUTER + UI + INITIALIZATION
    ========================================================= */
 
@@ -968,10 +973,17 @@ function processCommand(command) {
 
     try {
         let reply = "";
+        let appReply = null;
 
-        if (currentMode === "offline") {
+        // APP CONTROL — runs before AI mode routing.
+        if (typeof handleAppCommand === "function") {
+            appReply = handleAppCommand(text, language);
+        }
+
+        if (appReply !== null && appReply !== undefined) {
+            reply = String(appReply);
+        } else if (currentMode === "offline") {
             reply = getOfflineReply(text);
-
         } else {
             reply = getOfflineReply(text);
 
@@ -982,7 +994,6 @@ function processCommand(command) {
                     "Online AI এখনো সংযুক্ত করা হয়নি। আপাতত Offline mode ব্যবহার করো।",
                     "Online AI अभी कॉन्फ़िगर नहीं हुआ है। कृपया Offline mode इस्तेमाल करें।"
                 );
-
             } else if (currentMode === "hybrid") {
                 reply = getReply(
                     language,
@@ -1299,5 +1310,5 @@ if (document.readyState === "loading") {
 }
 
 // ==========================================
-// POWNIN SMART BRAIN v3.0 COMPLETE
+// POWNIN SMART BRAIN v3.1 COMPLETE
 // ==========================================
