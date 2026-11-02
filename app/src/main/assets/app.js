@@ -1738,6 +1738,14 @@ function initializeEventListeners() {
         });
     }
 
+       const clearChatBtn = document.getElementById("clearChatBtn");
+
+    if (clearChatBtn) {
+        clearChatBtn.addEventListener("click", function () {
+            clearConversation();
+        });
+    }
+   
     if (stopBtn) {
         stopBtn.addEventListener("click", function () {
             stopSpeaking();
