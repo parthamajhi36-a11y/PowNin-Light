@@ -1379,7 +1379,7 @@ function setPowninMode(mode) {
 
     if (modeLabel) {
         modeLabel.textContent =
-            mode.toUpperCase() + " MODE";
+            mode.toUpperCase();
     }
 
     Object.keys(modeButtons).forEach(function (key) {
