@@ -99,22 +99,31 @@ function normalizeText(text) {
 function detectLanguage(text) {
     const value = String(text || "");
 
+    // Bengali script detection
     if (/[\u0980-\u09FF]/.test(value)) {
         return "bn";
     }
 
+    // Hindi / Devanagari script detection
     if (/[\u0900-\u097F]/.test(value)) {
         return "hi";
     }
 
+    // Banglish detection
     const banglaWords =
-        /\b(tomar|tomar|amar|amake|tumi|kemon|acho|achho|nam|name|ki|kothay|bolo|bolbe|korbo|koro|kholo|bondho|shomoy|somoy|dhonnobad|bhalo|valo|ami|hobe|chai)\b/i;
+        /\b(tomar|amar|amake|tumi|kemon|acho|achho|nam|name|naam|ki|kothay|bolo|bolbe|korbo|koro|kholo|bondho|shomoy|somoy|dhonnobad|bhalo|valo|ami|hobe|chai)\b/i;
 
+    // Roman Hindi detection
     const hindiWords =
-        /\b(mera|meri|mujhe|tumhara|aapka|kaise|kya|hai|haan|nahi|kholo|band|samay|shukriya)\b/i;
+        /\b(mera|meri|mujhe|tumhara|aapka|kaise|kya|hai|haan|nahi|samay|shukriya)\b/i;
 
-    if (banglaWords.test(value)) return "bn";
-    if (hindiWords.test(value)) return "hi";
+    if (banglaWords.test(value)) {
+        return "bn";
+    }
+
+    if (hindiWords.test(value)) {
+        return "hi";
+    }
 
     return "en";
 }
@@ -122,6 +131,7 @@ function detectLanguage(text) {
 function getLanguageCode(language) {
     if (language === "bn") return "bn-IN";
     if (language === "hi") return "hi-IN";
+
     return "en-IN";
 }
 
@@ -138,8 +148,14 @@ function getLanguage(text) {
 }
 
 function getReply(language, english, bengali, hindi) {
-    if (language === "bn") return bengali;
-    if (language === "hi") return hindi;
+    if (language === "bn") {
+        return bengali;
+    }
+
+    if (language === "hi") {
+        return hindi;
+    }
+
     return english;
 }
 
@@ -432,33 +448,27 @@ function handleLanguageCommand(command, language) {
 function handleCalculation(command, language) {
     const math = window.PowninMath;
 
-    if (!math) return null;
+    if (!math) {
+        return null;
+    }
 
     try {
+        let answer = null;
+
+        // Try solve() first
         if (typeof math.solve === "function") {
             const solved = math.solve(command);
 
             if (solved && solved.success === true) {
-                let answer = solved.answer;
-
-                if (Array.isArray(answer)) {
-                    answer = answer.join(", ");
-                }
-
-                if (answer === null || answer === undefined) {
-                    answer = "No real solution";
-                }
-
-                return getReply(
-                    language,
-                    "The answer is " + answer,
-                    "উত্তর হলো " + answer,
-                    "उत्तर है " + answer
-                );
+                answer = solved.answer;
             }
         }
 
-        if (typeof math.calculate === "function") {
+        // Use calculate() if solve() did not return an answer
+        if (
+            (answer === null || answer === undefined) &&
+            typeof math.calculate === "function"
+        ) {
             const result = math.calculate(command);
 
             if (
@@ -466,20 +476,37 @@ function handleCalculation(command, language) {
                 result !== undefined &&
                 result !== false
             ) {
-                return getReply(
-                    language,
-                    "The answer is " + result,
-                    "উত্তর হলো " + result,
-                    "उत्तर है " + result
-                );
+                answer = result;
             }
         }
 
+        if (answer === null || answer === undefined) {
+            return null;
+        }
+
+        if (Array.isArray(answer)) {
+            answer = answer.join(", ");
+        }
+
+        if (typeof answer === "object") {
+            if (answer.success === true && answer.answer !== undefined) {
+                answer = answer.answer;
+            } else {
+                return null;
+            }
+        }
+
+        return getReply(
+            language,
+            "The answer is " + answer,
+            "উত্তর হলো " + answer,
+            "उत्तर है " + answer
+        );
+
     } catch (error) {
         console.error("Math error:", error);
+        return null;
     }
-
-    return null;
 }
 
 // ==========================================
