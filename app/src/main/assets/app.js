@@ -1886,3 +1886,418 @@ function stopPowninProcessing() {
 // ------------------------------------------------------------
 // END OF PART 7/8
 // ============================================================
+
+
+// ============================================================
+// POWNIN SMART BRAIN v5.3
+// PART 8/8 — FINAL UI INTEGRATION & EVENT HANDLERS
+// ============================================================
+
+// ------------------------------------------------------------
+// 1. UI HELPERS
+// ------------------------------------------------------------
+
+function updatePowninCharacterCount() {
+    if (!commandInput || !characterCount) return;
+
+    characterCount.textContent = String(
+        commandInput.value.length
+    );
+}
+
+function updatePowninModeButtons() {
+    const buttons = [
+        getElement("offlineModeBtn"),
+        getElement("onlineModeBtn"),
+        getElement("hybridModeBtn")
+    ];
+
+    buttons.forEach(function (button) {
+        if (!button) return;
+
+        const active =
+            button.getAttribute("data-mode") === currentMode;
+
+        button.classList.toggle("active", active);
+        button.setAttribute(
+            "aria-pressed",
+            active ? "true" : "false"
+        );
+    });
+
+    updatePowninModeLabel();
+}
+
+function updatePowninClock() {
+    if (!clockElement) return;
+
+    clockElement.textContent =
+        new Date().toLocaleTimeString(
+            getCurrentLanguage(),
+            {
+                hour: "2-digit",
+                minute: "2-digit"
+            }
+        );
+}
+
+
+// ------------------------------------------------------------
+// 2. ANDROID BRIDGE HELPERS
+// ------------------------------------------------------------
+
+function stopPowninNativeVoice() {
+    callPowninAndroid("stopSpeaking", []);
+    callPowninAndroid("stopListening", []);
+
+    isListening = false;
+
+    setVoiceStatus("READY");
+}
+
+function startPowninNativeListening() {
+    const language = getCurrentLanguage();
+
+    const result = callPowninAndroid(
+        "startListening",
+        [language]
+    );
+
+    if (!result || !result.success) {
+        setStatus(
+            "Could not start voice recognition.",
+            true
+        );
+
+        setVoiceStatus("UNAVAILABLE");
+        return false;
+    }
+
+    isListening = true;
+
+    setVoiceStatus("LISTENING");
+    setStatus("Listening...");
+
+    return true;
+}
+
+
+// ------------------------------------------------------------
+// 3. NATIVE ANDROID SPEECH CALLBACKS
+// MainActivity can call these JavaScript functions.
+// ------------------------------------------------------------
+
+window.onNativeSpeechResult = function (recognizedText) {
+    const text = String(recognizedText || "").trim();
+
+    isListening = false;
+    setVoiceStatus("READY");
+
+    if (!text) {
+        setStatus("No speech detected.", true);
+        return;
+    }
+
+    if (commandInput) {
+        commandInput.value = text;
+        updatePowninCharacterCount();
+    }
+
+    processPowninCommand(text);
+};
+
+window.onNativeSpeechError = function (errorMessage) {
+    isListening = false;
+
+    setVoiceStatus("READY");
+
+    setStatus(
+        String(errorMessage || "Speech recognition error."),
+        true
+    );
+};
+
+
+// ------------------------------------------------------------
+// 4. FIX REPLY SPEAKING
+// Android speak() requires text AND language.
+// ------------------------------------------------------------
+
+function speakPowninReply(message) {
+    const text = String(message || "").trim();
+
+    if (!speechEnabled || !text) return;
+
+    const language = getReplyLanguage(text);
+
+    const result = callPowninAndroid(
+        "speak",
+        [text, language]
+    );
+
+    if (!result || !result.success) {
+        setVoiceStatus("VOICE UNAVAILABLE");
+        return;
+    }
+
+    setVoiceStatus("SPEAKING");
+}
+
+
+// ------------------------------------------------------------
+// 5. SEND COMMAND FORM
+// ------------------------------------------------------------
+
+if (commandForm) {
+    commandForm.addEventListener("submit", function (event) {
+        event.preventDefault();
+
+        if (!commandInput) return;
+
+        const command = commandInput.value.trim();
+
+        if (!command) {
+            setStatus("Please enter a command.");
+            return;
+        }
+
+        commandInput.value = "";
+        updatePowninCharacterCount();
+
+        processPowninCommand(command);
+    });
+}
+
+
+// ------------------------------------------------------------
+// 6. SEND BUTTON
+// ------------------------------------------------------------
+
+if (sendBtn && !commandForm) {
+    sendBtn.addEventListener("click", function () {
+        if (!commandInput) return;
+
+        const command = commandInput.value.trim();
+
+        if (!command) return;
+
+        commandInput.value = "";
+        updatePowninCharacterCount();
+
+        processPowninCommand(command);
+    });
+}
+
+
+// ------------------------------------------------------------
+// 7. CHARACTER COUNTER
+// ------------------------------------------------------------
+
+if (commandInput) {
+    commandInput.addEventListener(
+        "input",
+        updatePowninCharacterCount
+    );
+
+    updatePowninCharacterCount();
+}
+
+
+// ------------------------------------------------------------
+// 8. MICROPHONE BUTTON
+// ------------------------------------------------------------
+
+if (micBtn) {
+    micBtn.addEventListener("click", function () {
+        if (isListening) {
+            callPowninAndroid("stopListening", []);
+
+            isListening = false;
+
+            setVoiceStatus("READY");
+            setStatus("Listening stopped.");
+
+            return;
+        }
+
+        startPowninNativeListening();
+    });
+}
+
+
+// ------------------------------------------------------------
+// 9. STOP VOICE BUTTON
+// ------------------------------------------------------------
+
+if (stopSpeakBtn) {
+    stopSpeakBtn.addEventListener("click", function () {
+        stopPowninProcessing();
+        stopPowninNativeVoice();
+
+        setStatus("Voice and processing stopped.");
+    });
+}
+
+
+// ------------------------------------------------------------
+// 10. REPEAT LAST REPLY
+// ------------------------------------------------------------
+
+if (speakBtn) {
+    speakBtn.addEventListener("click", function () {
+        if (!lastReply) {
+            setStatus("There is no reply to repeat.");
+            return;
+        }
+
+        speakPowninReply(lastReply);
+    });
+}
+
+
+// ------------------------------------------------------------
+// 11. CLEAR CHAT
+// ------------------------------------------------------------
+
+if (clearChatBtn) {
+    clearChatBtn.addEventListener("click", function () {
+        if (chat) {
+            chat.textContent = "";
+        }
+
+        clearPowninHistory();
+
+        lastReply = "";
+        lastUserCommand = "";
+
+        setStatus("Chat cleared.");
+    });
+}
+
+
+// ------------------------------------------------------------
+// 12. MODE SELECTOR
+// ------------------------------------------------------------
+
+[
+    "offlineModeBtn",
+    "onlineModeBtn",
+    "hybridModeBtn"
+].forEach(function (id) {
+    const button = getElement(id);
+
+    if (!button) return;
+
+    button.addEventListener("click", function () {
+        const mode = button.getAttribute("data-mode");
+
+        if (!setPowninMode(mode)) {
+            setStatus("Invalid AI mode.", true);
+            return;
+        }
+
+        updatePowninModeButtons();
+
+        setStatus(
+            String(mode).toUpperCase() + " mode selected."
+        );
+    });
+});
+
+if (modeSelect) {
+    modeSelect.addEventListener("change", function () {
+        setPowninMode(modeSelect.value);
+        updatePowninModeButtons();
+    });
+}
+
+updatePowninModeButtons();
+
+
+// ------------------------------------------------------------
+// 13. LANGUAGE SELECTOR
+// ------------------------------------------------------------
+
+if (languageSelect) {
+    languageSelect.value = selectedLanguage;
+
+    languageSelect.addEventListener("change", function () {
+        selectedLanguage = normalizePowninLanguage(
+            languageSelect.value
+        );
+
+        callPowninAndroid(
+            "setTtsLanguage",
+            [selectedLanguage]
+        );
+
+        setStatus("Voice language updated.");
+
+        updatePowninClock();
+    });
+}
+
+
+// ------------------------------------------------------------
+// 14. SETTINGS PANEL
+// ------------------------------------------------------------
+
+if (settingsBtn && settingsPanel) {
+    settingsBtn.addEventListener("click", function () {
+        settingsPanel.hidden = !settingsPanel.hidden;
+    });
+}
+
+if (closeSettingsBtn && settingsPanel) {
+    closeSettingsBtn.addEventListener("click", function () {
+        settingsPanel.hidden = true;
+    });
+}
+
+
+// ------------------------------------------------------------
+// 15. CLEAR API KEY
+// ------------------------------------------------------------
+
+if (clearKeyBtn && apiKeyInput) {
+    clearKeyBtn.addEventListener("click", function () {
+        apiKeyInput.value = "";
+
+        setStatus("API key field cleared.");
+    });
+}
+
+
+// ------------------------------------------------------------
+// 16. DEVICE CLOCK
+// ------------------------------------------------------------
+
+updatePowninClock();
+
+setInterval(function () {
+    updatePowninClock();
+}, 1000);
+
+
+// ------------------------------------------------------------
+// 17. INITIAL SYSTEM STATUS
+// ------------------------------------------------------------
+
+setNetworkStatus(
+    currentMode === "offline" ? "OFFLINE" :
+    currentMode === "online" ? "ONLINE AI" :
+    "HYBRID"
+);
+
+setVoiceStatus("READY");
+setStatus("POWNIN READY");
+
+console.log(
+    "POWNIN SMART BRAIN v" +
+    POWNIN_VERSION +
+    " — ALL 8 PARTS LOADED"
+);
+
+// ============================================================
+// END OF PART 8/8
+// ============================================================
