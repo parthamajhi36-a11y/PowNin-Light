@@ -9,6 +9,7 @@ import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
+import android.speech.tts.Voice
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebSettings
@@ -33,6 +34,12 @@ class MainActivity : ComponentActivity() {
     private var pendingText: String? = null
     private var pendingLanguage = "en-IN"
 
+    private var currentLanguage = "en-IN"
+    private var voiceStyle = "gaming"
+
+    private var voiceRate = 1.05f
+    private var voicePitch = 0.92f
+
     // ==========================================
     // MICROPHONE PERMISSION
     // ==========================================
@@ -41,6 +48,7 @@ class MainActivity : ComponentActivity() {
         registerForActivityResult(
             ActivityResultContracts.RequestPermission()
         ) { granted ->
+
             if (granted) {
                 launchRecognition(pendingLanguage)
             } else {
@@ -62,8 +70,10 @@ class MainActivity : ComponentActivity() {
         setupSpeechRecognizer()
 
         setContent {
+
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
+
                 factory = { context ->
 
                     webView = WebView(context)
@@ -101,7 +111,7 @@ class MainActivity : ComponentActivity() {
     }
 
     // ==========================================
-    // TEXT TO SPEECH
+    // TEXT TO SPEECH INITIALIZATION
     // ==========================================
 
     private fun setupTextToSpeech() {
@@ -112,9 +122,16 @@ class MainActivity : ComponentActivity() {
 
                 ttsReady = true
 
+                applyVoiceSettings()
+                setTtsLanguageNative(currentLanguage)
+
                 pendingText?.let { text ->
-                    speakNative(text, pendingLanguage)
+
+                    val language = pendingLanguage
+
                     pendingText = null
+
+                    speakNative(text, language)
                 }
 
                 notifyJavascript("onNativeTtsReady")
@@ -131,34 +148,94 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // ==========================================
+    // VOICE STYLE SETTINGS
+    // ==========================================
+
+    private fun applyVoiceSettings() {
+
+        val tts = textToSpeech ?: return
+        if (!ttsReady) return
+
+        when (voiceStyle.lowercase(Locale.ROOT)) {
+
+            "gaming" -> {
+                voiceRate = 1.05f
+                voicePitch = 0.92f
+            }
+
+            "normal" -> {
+                voiceRate = 1.0f
+                voicePitch = 1.0f
+            }
+
+            "calm" -> {
+                voiceRate = 0.90f
+                voicePitch = 0.95f
+            }
+
+            else -> {
+                voiceRate = 1.0f
+                voicePitch = 1.0f
+            }
+        }
+
+        tts.setSpeechRate(voiceRate)
+        tts.setPitch(voicePitch)
+    }
+
+    private fun setTtsLanguageNative(language: String): Boolean {
+
+        val locale = when (language) {
+
+            "bn-IN" -> Locale.forLanguageTag("bn-IN")
+
+            "hi-IN" -> Locale.forLanguageTag("hi-IN")
+
+            else -> Locale.forLanguageTag("en-IN")
+        }
+
+        currentLanguage = language
+
+        val tts = textToSpeech ?: return false
+        if (!ttsReady) return false
+
+        val result = tts.setLanguage(locale)
+
+        return result != TextToSpeech.LANG_MISSING_DATA &&
+            result != TextToSpeech.LANG_NOT_SUPPORTED
+    }
+
+    // ==========================================
+    // NATIVE SPEAK
+    // ==========================================
+
     private fun speakNative(
         text: String,
         language: String
     ) {
 
-        if (!ttsReady || text.isBlank()) return
+        if (text.isBlank()) return
 
-        val locale = when (language) {
-            "bn-IN" -> Locale.forLanguageTag("bn-IN")
-            "hi-IN" -> Locale.forLanguageTag("hi-IN")
-            else -> Locale.forLanguageTag("en-IN")
+        if (!ttsReady) {
+            pendingText = text
+            pendingLanguage = language
+            return
         }
 
-        val result = textToSpeech?.setLanguage(locale)
+        val languageReady = setTtsLanguageNative(language)
 
-        if (
-            result == TextToSpeech.LANG_MISSING_DATA ||
-            result == TextToSpeech.LANG_NOT_SUPPORTED
-        ) {
+        if (!languageReady) {
+
             notifyJavascript(
                 "onNativeSpeechError",
                 "Selected TTS language is unavailable"
             )
+
             return
         }
 
-        textToSpeech?.setSpeechRate(1.0f)
-        textToSpeech?.setPitch(0.9f)
+        applyVoiceSettings()
 
         textToSpeech?.speak(
             text,
@@ -169,7 +246,7 @@ class MainActivity : ComponentActivity() {
     }
 
     // ==========================================
-    // SPEECH RECOGNITION
+    // SPEECH RECOGNIZER SETUP
     // ==========================================
 
     private fun setupSpeechRecognizer() {
@@ -182,6 +259,7 @@ class MainActivity : ComponentActivity() {
             SpeechRecognizer.createSpeechRecognizer(this)
 
         speechRecognizer?.setRecognitionListener(
+
             object : RecognitionListener {
 
                 override fun onReadyForSpeech(params: Bundle?) {
@@ -197,6 +275,7 @@ class MainActivity : ComponentActivity() {
                 override fun onEndOfSpeech() {}
 
                 override fun onError(error: Int) {
+
                     notifyJavascript(
                         "onNativeSpeechError",
                         "Speech recognition error: $error"
@@ -205,9 +284,10 @@ class MainActivity : ComponentActivity() {
 
                 override fun onResults(results: Bundle?) {
 
-                    val matches = results?.getStringArrayList(
-                        SpeechRecognizer.RESULTS_RECOGNITION
-                    )
+                    val matches =
+                        results?.getStringArrayList(
+                            SpeechRecognizer.RESULTS_RECOGNITION
+                        )
 
                     val spokenText = matches?.firstOrNull()
 
@@ -239,6 +319,10 @@ class MainActivity : ComponentActivity() {
         )
     }
 
+    // ==========================================
+    // START NATIVE LISTENING
+    // ==========================================
+
     private fun startNativeListening(language: String) {
 
         runOnUiThread {
@@ -246,10 +330,12 @@ class MainActivity : ComponentActivity() {
             pendingLanguage = language
 
             if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+
                 notifyJavascript(
                     "onNativeSpeechError",
                     "Speech recognition unavailable"
                 )
+
                 return@runOnUiThread
             }
 
@@ -258,9 +344,11 @@ class MainActivity : ComponentActivity() {
                     Manifest.permission.RECORD_AUDIO
                 ) != PackageManager.PERMISSION_GRANTED
             ) {
+
                 audioPermissionLauncher.launch(
                     Manifest.permission.RECORD_AUDIO
                 )
+
                 return@runOnUiThread
             }
 
@@ -308,18 +396,23 @@ class MainActivity : ComponentActivity() {
 
             speechRecognizer?.startListening(intent)
 
-        } catch (e: Exception) {
+        } catch (error: Exception) {
 
             notifyJavascript(
                 "onNativeSpeechError",
-                e.message ?: "Unable to start listening"
+                error.message ?: "Unable to start listening"
             )
         }
     }
 
+    // ==========================================
+    // STOP NATIVE LISTENING
+    // ==========================================
+
     private fun stopNativeListening() {
 
         runOnUiThread {
+
             try {
                 speechRecognizer?.cancel()
             } catch (_: Exception) {
@@ -327,9 +420,12 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // ==========================================
-    // SMART APP CONTROL v1.0
-    // ==========================================
+    // PART 1 END — CONTINUE WITH PART 2
+
+    
+// ==========================================
+// SMART APP CONTROL
+// ==========================================
 
     private fun launchAppFromCommand(
         appName: String
@@ -400,9 +496,12 @@ class MainActivity : ComponentActivity() {
             )
 
             runOnUiThread {
+
                 try {
                     startActivity(intent)
+
                 } catch (error: Exception) {
+
                     notifyJavascript(
                         "onNativeAppError",
                         error.message ?: "Unable to open app"
@@ -417,9 +516,9 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // ==========================================
-    // JAVASCRIPT CALLBACK
-    // ==========================================
+// ==========================================
+// JAVASCRIPT CALLBACK
+// ==========================================
 
     private fun notifyJavascript(
         function: String,
@@ -446,14 +545,13 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // PART 1 END
-
-        // ==========================================
-    // JAVASCRIPT BRIDGE
-    // ==========================================
+// ==========================================
+// JAVASCRIPT BRIDGE
+// ==========================================
 
     inner class PowninBridge {
 
+        // JavaScript should call speak(text, language).
         @JavascriptInterface
         fun speak(
             text: String?,
@@ -462,22 +560,30 @@ class MainActivity : ComponentActivity() {
 
             if (text.isNullOrBlank()) return
 
+            val selectedLang =
+                language?.takeIf { it.isNotBlank() }
+                    ?: currentLanguage
+
             runOnUiThread {
 
-                val lang = language ?: "en-IN"
-
                 if (ttsReady) {
-                    speakNative(text, lang)
+
+                    speakNative(text, selectedLang)
+
                 } else {
+
                     pendingText = text
-                    pendingLanguage = lang
+                    pendingLanguage = selectedLang
                 }
             }
         }
 
         @JavascriptInterface
         fun startListening(language: String?) {
-            startNativeListening(language ?: "en-IN")
+
+            startNativeListening(
+                language ?: currentLanguage
+            )
         }
 
         @JavascriptInterface
@@ -487,13 +593,72 @@ class MainActivity : ComponentActivity() {
 
         @JavascriptInterface
         fun stopSpeaking() {
+
             runOnUiThread {
                 textToSpeech?.stop()
             }
         }
 
+        // GAMING / NORMAL / CALM VOICE STYLE
+
+        @JavascriptInterface
+        fun setVoiceStyle(style: String?): Boolean {
+
+            if (style.isNullOrBlank()) return false
+
+            val normalized =
+                style.trim().lowercase(Locale.ROOT)
+
+            if (
+                normalized !in listOf(
+                    "gaming",
+                    "normal",
+                    "calm"
+                )
+            ) {
+                return false
+            }
+
+            runOnUiThread {
+
+                voiceStyle = normalized
+                applyVoiceSettings()
+            }
+
+            return true
+        }
+
+        // CHANGE TTS LANGUAGE
+
+        @JavascriptInterface
+        fun setTtsLanguage(language: String?): Boolean {
+
+            val normalized = when (language) {
+
+                "bn-IN", "bn" -> "bn-IN"
+
+                "hi-IN", "hi" -> "hi-IN"
+
+                "en-IN", "en" -> "en-IN"
+
+                else -> return false
+            }
+
+            currentLanguage = normalized
+
+            runOnUiThread {
+
+                if (ttsReady) {
+                    setTtsLanguageNative(normalized)
+                }
+            }
+
+            return true
+        }
+
         @JavascriptInterface
         fun isVoiceReady(): Boolean {
+
             return ttsReady &&
                 SpeechRecognizer.isRecognitionAvailable(
                     this@MainActivity
@@ -513,17 +678,20 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // ==========================================
-    // ACTIVITY DESTROY
-    // ==========================================
+// ==========================================
+// ACTIVITY DESTROY
+// ==========================================
 
     override fun onDestroy() {
 
         if (::webView.isInitialized) {
+
             webView.stopLoading()
+
             webView.removeJavascriptInterface(
                 "PowninAndroid"
             )
+
             webView.loadUrl("about:blank")
             webView.destroy()
         }
@@ -540,5 +708,3 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 }
-
-    
