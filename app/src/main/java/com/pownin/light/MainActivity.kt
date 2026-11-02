@@ -1,19 +1,17 @@
+
 package com.pownin.light
 
 import android.Manifest
 import android.content.Intent
-import android.Manifest
-import android.content.Intent
+import android.content.pm.PackageManager
+import android.content.pm.ResolveInfo
 import android.media.AudioManager
-import android.content.pm.PackageManager
-import android.content.pm.PackageManager
 import android.os.Bundle
 import android.provider.MediaStore
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
-import android.speech.tts.Voice
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebSettings
@@ -35,6 +33,7 @@ class MainActivity : ComponentActivity() {
     private var textToSpeech: TextToSpeech? = null
 
     private var ttsReady = false
+
     private var pendingText: String? = null
     private var pendingLanguage = "en-IN"
 
@@ -152,6 +151,44 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // ==========================================
+    // TTS LANGUAGE
+    // ==========================================
+
+    private fun setTtsLanguageNative(
+        language: String
+    ): Boolean {
+
+        val locale = when (
+            language.trim().lowercase(Locale.ROOT)
+        ) {
+
+            "bn", "bn-in" -> Locale("bn", "IN")
+
+            "hi", "hi-in" -> Locale("hi", "IN")
+
+            "en", "en-in" -> Locale("en", "IN")
+
+            else -> Locale("en", "IN")
+        }
+
+        val tts = textToSpeech ?: return false
+
+        return try {
+
+            val availability = tts.isLanguageAvailable(locale)
+
+            if (availability < TextToSpeech.LANG_AVAILABLE) {
+                false
+            } else {
+                tts.language = locale
+                true
+            }
+
+        } catch (error: Exception) {
+            false
+        }
+    }
 
     // ==========================================
     // VOICE STYLE SETTINGS
@@ -206,7 +243,8 @@ class MainActivity : ComponentActivity() {
             return
         }
 
-        val languageReady = setTtsLanguageNative(language)
+        val languageReady =
+            setTtsLanguageNative(language)
 
         if (!languageReady) {
 
@@ -403,85 +441,161 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // PART 1 END — CONTINUE WITH PART 2
+    // ==========================================
+    // SMART APP DISCOVERY
+    // ==========================================
 
-    
-// ==========================================
-// SMART APP CONTROL
-// ==========================================
+    private fun findInstalledApp(
+        requestedName: String
+    ): ResolveInfo? {
+
+        val query = requestedName
+            .trim()
+            .lowercase(Locale.ROOT)
+
+        if (query.isBlank()) return null
+
+        val launcherIntent = Intent(
+            Intent.ACTION_MAIN
+        ).apply {
+            addCategory(Intent.CATEGORY_LAUNCHER)
+        }
+
+        val installedApps = packageManager
+            .queryIntentActivities(launcherIntent, 0)
+
+        // Exact app name match
+
+        val exactMatch = installedApps.firstOrNull { info ->
+
+            val label = info.loadLabel(packageManager)
+                .toString()
+                .trim()
+                .lowercase(Locale.ROOT)
+
+            label == query
+        }
+
+        if (exactMatch != null) {
+            return exactMatch
+        }
+
+        // Partial app name match
+
+        return installedApps.firstOrNull { info ->
+
+            val label = info.loadLabel(packageManager)
+                .toString()
+                .trim()
+                .lowercase(Locale.ROOT)
+
+            label.contains(query)
+        }
+    }
+
+    // ==========================================
+    // SMART APP LAUNCHER
+    // ==========================================
 
     private fun launchAppFromCommand(
         appName: String
     ): String {
 
-        val key = appName.trim().lowercase(Locale.ROOT)
+        val key = appName.trim()
+            .lowercase(Locale.ROOT)
 
-        val intent: Intent? = when (key) {
-
-            "youtube" ->
-                packageManager.getLaunchIntentForPackage(
-                    "com.google.android.youtube"
-                )
-
-            "chrome" ->
-                packageManager.getLaunchIntentForPackage(
-                    "com.android.chrome"
-                )
-
-            "whatsapp" ->
-                packageManager.getLaunchIntentForPackage(
-                    "com.whatsapp"
-                )
-
-            "maps" ->
-                packageManager.getLaunchIntentForPackage(
-                    "com.google.android.apps.maps"
-                )
-
-            "settings" ->
-                Intent(
-                    android.provider.Settings.ACTION_SETTINGS
-                )
-
-            "phone" ->
-                Intent(Intent.ACTION_DIAL)
-
-            "camera" ->
-                Intent(
-                    MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA
-                )
-
-            "calculator" ->
-                Intent(Intent.ACTION_MAIN).apply {
-                    addCategory(
-                        Intent.CATEGORY_APP_CALCULATOR
-                    )
-                }
-
-            "files" ->
-                Intent(Intent.ACTION_MAIN).apply {
-                    addCategory(
-                        Intent.CATEGORY_APP_FILES
-                    )
-                }
-
-            else -> null
-        }
-
-        if (intent == null) {
-            return "APP_NOT_FOUND"
+        if (key.isBlank()) {
+            return "INVALID_APP"
         }
 
         return try {
 
-            intent.addFlags(
+            // Known application shortcuts
+
+            val knownIntent: Intent? = when (key) {
+
+                "youtube" ->
+                    packageManager.getLaunchIntentForPackage(
+                        "com.google.android.youtube"
+                    )
+
+                "chrome" ->
+                    packageManager.getLaunchIntentForPackage(
+                        "com.android.chrome"
+                    )
+
+                "whatsapp" ->
+                    packageManager.getLaunchIntentForPackage(
+                        "com.whatsapp"
+                    )
+
+                "maps", "google maps" ->
+                    packageManager.getLaunchIntentForPackage(
+                        "com.google.android.apps.maps"
+                    )
+
+                "settings" ->
+                    Intent(
+                        android.provider.Settings.ACTION_SETTINGS
+                    )
+
+                "phone", "dialer" ->
+                    Intent(Intent.ACTION_DIAL)
+
+                "camera" ->
+                    Intent(
+                        MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA
+                    )
+
+                "calculator" ->
+                    Intent(Intent.ACTION_MAIN).apply {
+                        addCategory(
+                            Intent.CATEGORY_APP_CALCULATOR
+                        )
+                    }
+
+                "files", "file manager" ->
+                    Intent(Intent.ACTION_MAIN).apply {
+                        addCategory(
+                            Intent.CATEGORY_APP_FILES
+                        )
+                    }
+
+                else -> null
+            }
+
+            // Discover other installed launcher apps
+
+            val appIntent = knownIntent ?: run {
+
+                val appInfo = findInstalledApp(key)
+                    ?: return "APP_NOT_FOUND"
+
+                val activityInfo = appInfo.activityInfo
+                    ?: return "APP_NOT_FOUND"
+
+                Intent(Intent.ACTION_MAIN).apply {
+
+                    addCategory(Intent.CATEGORY_LAUNCHER)
+
+                    setClassName(
+                        activityInfo.packageName,
+                        activityInfo.name
+                    )
+                }
+            }
+
+            appIntent.addFlags(
                 Intent.FLAG_ACTIVITY_NEW_TASK
             )
+
+            // Launch on Android UI thread
 
             runOnUiThread {
 
                 try {
-                    startActivity(intent)
+
+                    startActivity(appIntent)
 
                 } catch (error: Exception) {
 
@@ -495,13 +609,14 @@ class MainActivity : ComponentActivity() {
             "OPENING"
 
         } catch (error: Exception) {
+
             "ERROR"
         }
     }
 
-// ==========================================
-// JAVASCRIPT CALLBACK
-// ==========================================
+    // ==========================================
+    // JAVASCRIPT CALLBACK
+    // ==========================================
 
     private fun notifyJavascript(
         function: String,
@@ -528,13 +643,12 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-// ==========================================
-// JAVASCRIPT BRIDGE
-// ==========================================
+    // ==========================================
+    // JAVASCRIPT BRIDGE
+    // ==========================================
 
     inner class PowninBridge {
 
-        // JavaScript should call speak(text, language).
         @JavascriptInterface
         fun speak(
             text: String?,
@@ -582,7 +696,6 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-
         // GAMING / NORMAL / DEEP VOICE STYLE
 
         @JavascriptInterface
@@ -592,7 +705,8 @@ class MainActivity : ComponentActivity() {
                 return false
             }
 
-            val normalized = style.trim().lowercase(Locale.ROOT)
+            val normalized =
+                style.trim().lowercase(Locale.ROOT)
 
             if (
                 normalized !in listOf(
@@ -605,6 +719,7 @@ class MainActivity : ComponentActivity() {
             }
 
             runOnUiThread {
+
                 voiceStyle = normalized
                 applyVoiceSettings()
             }
@@ -617,13 +732,15 @@ class MainActivity : ComponentActivity() {
         @JavascriptInterface
         fun setTtsLanguage(language: String?): Boolean {
 
-            val normalized = when (language) {
+            val normalized = when (
+                language?.lowercase(Locale.ROOT)
+            ) {
 
-                "bn-IN", "bn" -> "bn-IN"
+                "bn-in", "bn" -> "bn-IN"
 
-                "hi-IN", "hi" -> "hi-IN"
+                "hi-in", "hi" -> "hi-IN"
 
-                "en-IN", "en" -> "en-IN"
+                "en-in", "en" -> "en-IN"
 
                 else -> return false
             }
@@ -644,14 +761,17 @@ class MainActivity : ComponentActivity() {
 
         @JavascriptInterface
         fun adjustVolume(action: String?): Boolean {
+
             return try {
+
                 val audioManager =
                     getSystemService(AudioManager::class.java)
                         ?: return false
 
                 val stream = AudioManager.STREAM_MUSIC
 
-                when (action?.lowercase()) {
+                when (action?.lowercase(Locale.ROOT)) {
+
                     "up" -> audioManager.adjustStreamVolume(
                         stream,
                         AudioManager.ADJUST_RAISE,
@@ -682,6 +802,7 @@ class MainActivity : ComponentActivity() {
                 true
 
             } catch (error: Exception) {
+
                 false
             }
         }
@@ -708,9 +829,9 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-// ==========================================
-// ACTIVITY DESTROY
-// ==========================================
+    // ==========================================
+    // ACTIVITY DESTROY
+    // ==========================================
 
     override fun onDestroy() {
 
