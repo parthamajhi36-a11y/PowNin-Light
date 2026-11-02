@@ -799,7 +799,7 @@ function processCommand(command) {
 
     if (!text || isProcessing) return;
 
-    if (text.length > MAX_COMMAND_LENGTH) {
+    if (text.length > 2000) {
         showBotMessage(
             "Message is too long. Please use a shorter message."
         );
