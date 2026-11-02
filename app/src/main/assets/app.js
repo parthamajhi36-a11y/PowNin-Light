@@ -1672,7 +1672,8 @@ async function processCommand(rawCommand) {
             if (
                 onlineReply &&
                 !onlineReply.includes("not configured") &&
-                !onlineReply.includes("unavailable")
+                !onlineReply.includes("unavailable") &&
+                !onlineReply.includes("could not connect")
             ) {
                 showBotMessage(onlineReply);
                 saveConversation("assistant", onlineReply);
