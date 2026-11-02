@@ -1,4 +1,3 @@
-
 /* =====================================================
    POWNIN ADVANCED MATH ENGINE v4.0
    PART 1/5 — CORE + ALGEBRA
