@@ -917,11 +917,21 @@ function getPowninOfflineReply(command) {
     if (isPowninMathIntent(raw)) {
         const calculation = calculatePowninMath(raw);
 
+        let reply;
+
+        if (calculation.success) {
+            reply = language === "bn-IN"
+                ? "উত্তর হলো " + calculation.result
+                : language === "hi-IN"
+                    ? "उत्तर है " + calculation.result
+                    : "The answer is " + calculation.result;
+        } else {
+            reply = calculation.message;
+        }
+
         return {
             handled: true,
-            reply: calculation.success
-                ? "The answer is " + calculation.result
-                : calculation.message
+            reply: reply
         };
     }
 
