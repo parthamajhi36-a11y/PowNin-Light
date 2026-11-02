@@ -152,6 +152,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+
     // ==========================================
     // VOICE STYLE SETTINGS
     // ==========================================
@@ -173,9 +174,9 @@ class MainActivity : ComponentActivity() {
                 voicePitch = 1.0f
             }
 
-            "calm" -> {
+            "deep" -> {
                 voiceRate = 0.90f
-                voicePitch = 0.95f
+                voicePitch = 0.85f
             }
 
             else -> {
@@ -186,28 +187,6 @@ class MainActivity : ComponentActivity() {
 
         tts.setSpeechRate(voiceRate)
         tts.setPitch(voicePitch)
-    }
-
-    private fun setTtsLanguageNative(language: String): Boolean {
-
-        val locale = when (language) {
-
-            "bn-IN" -> Locale.forLanguageTag("bn-IN")
-
-            "hi-IN" -> Locale.forLanguageTag("hi-IN")
-
-            else -> Locale.forLanguageTag("en-IN")
-        }
-
-        currentLanguage = language
-
-        val tts = textToSpeech ?: return false
-        if (!ttsReady) return false
-
-        val result = tts.setLanguage(locale)
-
-        return result != TextToSpeech.LANG_MISSING_DATA &&
-            result != TextToSpeech.LANG_NOT_SUPPORTED
     }
 
     // ==========================================
