@@ -603,28 +603,29 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        // GAMING / NORMAL / CALM VOICE STYLE
+
+        // GAMING / NORMAL / DEEP VOICE STYLE
 
         @JavascriptInterface
         fun setVoiceStyle(style: String?): Boolean {
 
-            if (style.isNullOrBlank()) return false
+            if (style.isNullOrBlank()) {
+                return false
+            }
 
-            val normalized =
-                style.trim().lowercase(Locale.ROOT)
+            val normalized = style.trim().lowercase(Locale.ROOT)
 
             if (
                 normalized !in listOf(
                     "gaming",
                     "normal",
-                    "calm"
+                    "deep"
                 )
             ) {
                 return false
             }
 
             runOnUiThread {
-
                 voiceStyle = normalized
                 applyVoiceSettings()
             }
