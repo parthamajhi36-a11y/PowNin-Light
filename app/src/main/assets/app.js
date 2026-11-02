@@ -1717,29 +1717,10 @@ function displayPowninMessage(role, message) {
     chat.scrollTop = chat.scrollHeight;
 }
 
-// ------------------------------------------------------------
-// 2. SPEAK AN ASSISTANT REPLY THROUGH ANDROID BRIDGE
-// ------------------------------------------------------------
-
-function speakPowninReply(message) {
-    if (!speechEnabled) {
-        return false;
-    }
-
-    const text = String(message || "").trim();
-
-    if (!text) {
-        return false;
-    }
-
-    try {
-        const result = callPowninAndroid("speak", [text]);
-        return Boolean(result && result.success);
-    } catch (error) {
-        console.warn("Pownin speech error:", error);
-        return false;
-    }
-}
+/* =========================================================
+   POWNIN SMART BRAIN v5.3
+   PART 7/8 — COMMAND PROCESSING
+   ========================================================= */
 
 // ------------------------------------------------------------
 // 3. SHOW AND SPEAK THE FINAL REPLY
@@ -2042,7 +2023,6 @@ function speakPowninReply(message) {
 
     setVoiceStatus("SPEAKING");
 }
-
 
 // ------------------------------------------------------------
 // 5. SEND COMMAND FORM
