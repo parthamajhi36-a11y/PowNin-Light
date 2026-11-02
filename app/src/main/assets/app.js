@@ -1380,19 +1380,10 @@ function processPowninOpenAppCommand(command, language) {
 // 8. SETTINGS COMMAND
 // ------------------------------------------------------------
 
-function isPowninSettingsCommand(command) {
-    const text = normalizePowninText(command);
-
-    return /\b(open|go to|show)\b.*\b(settings|setting)\b/.test(text) ||
-        /সেটিংস খোলো|সেটিংস খুলে দাও/.test(text) ||
-        /सेटिंग खोलो|सेटिंग्स खोलो/.test(text) ||
-        /\b(settings kholo|setting kholo)\b/.test(text);
-}
-
 function processPowninSettingsCommand(language) {
     const lang = normalizePowninLanguage(language);
 
-    const result = callPowninAndroid("openSettingsPage", []);
+    const result = callPowninAndroid("openApp", ["settings"]);
 
     if (!result.success) {
         return {
@@ -1984,6 +1975,7 @@ function getPowninSpeechLanguage(text) {
 
 // ------------------------------------------------------------
 // 2. TEXT TO SPEECH
+// FIX 4.1 — NATIVE BRIDGE COMPATIBILITY
 // ------------------------------------------------------------
 
 function speak(text) {
@@ -2003,7 +1995,7 @@ function speak(text) {
     // Prefer native Android TextToSpeech.
     if (bridge && typeof bridge.speak === "function") {
         try {
-            const result = bridge.speak(message);
+            const result = bridge.speak(message, language);
 
             if (result !== false) {
                 setVoiceStatus("NATIVE TTS");
@@ -2022,7 +2014,9 @@ function speak(text) {
         try {
             window.speechSynthesis.cancel();
 
-            const utterance = new SpeechSynthesisUtterance(message);
+            const utterance =
+                new SpeechSynthesisUtterance(message);
+
             utterance.lang = language;
             utterance.rate = 1;
             utterance.pitch = 1;
@@ -2042,6 +2036,7 @@ function speak(text) {
             window.speechSynthesis.speak(utterance);
 
             return true;
+
         } catch (error) {
             console.warn("Browser TTS failed:", error);
         }
@@ -2213,7 +2208,7 @@ function stopPowninListening() {
 
 // ------------------------------------------------------------
 // 6. NATIVE SPEECH CALLBACKS
-// Called by Android if the bridge invokes these functions.
+// FIX 4.2 — AUTOMATIC COMMAND PROCESSING
 // ------------------------------------------------------------
 
 window.onNativeSpeechResult = function (text) {
@@ -2230,6 +2225,9 @@ window.onNativeSpeechResult = function (text) {
     updatePowninCharacterCount();
 
     setStatus("Speech recognized.");
+
+    // Automatically process the recognized speech.
+    processCommand(transcript);
 };
 
 window.onNativeSpeechError = function (error) {
