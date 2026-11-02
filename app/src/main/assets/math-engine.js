@@ -1,1702 +1,2023 @@
-/* =========================================================
-   POWNIN ADVANCED MATH ENGINE v3.0
-   PART 1/3 — CORE + EXPRESSION PARSER
-   ========================================================= */
+
+/* =====================================================
+   POWNIN ADVANCED MATH ENGINE v4.0
+   PART 1/5 — CORE + ALGEBRA
+   ===================================================== */
 
 (function () {
-    "use strict";
+"use strict";
 
-    const VERSION = "3.0";
-    const MAX_LENGTH = 500;
-    const MAX_TOKENS = 250;
-    const MAX_RESULT = 1e100;
-    const EPSILON = 1e-12;
+const VERSION = "4.0";
+const EPSILON = 1e-10;
+const MAX_LENGTH = 1000;
+const MAX_RESULT = 1e100;
 
-    // -------------------------------------------------------
-    // 1. NUMBER NORMALIZATION
-    // -------------------------------------------------------
-
-    function normalizeDigits(text) {
-        const bn = "০১২৩৪৫৬৭৮৯";
-        const hi = "०१२३४५६७८९";
-
-        return String(text).replace(/[০-৯०-९]/g, function (d) {
-            let i = bn.indexOf(d);
-            if (i >= 0) return String(i);
-
-            i = hi.indexOf(d);
-            return i >= 0 ? String(i) : d;
-        });
+function checked(n) {
+    if (!Number.isFinite(n) || Math.abs(n) > MAX_RESULT) {
+        throw new Error("Result is outside supported range.");
     }
+    return Math.abs(n) < EPSILON ? 0 : Number(n.toPrecision(12));
+}
 
-    function normalizeText(text) {
-        let s = normalizeDigits(text)
-            .toLowerCase()
-            .trim();
+function valid(n) {
+    return typeof n === "number" && Number.isFinite(n);
+}
 
-        const replacements = [
-            [/\bmultiplied by\b/g, "*"],
-            [/\btimes\b/g, "*"],
-            [/\binto\b/g, "*"],
-            [/\bdivided by\b/g, "/"],
-            [/\bdivided\b/g, "/"],
-            [/\bplus\b/g, "+"],
-            [/\badded to\b/g, "+"],
-            [/\bminus\b/g, "-"],
-            [/\bsubtract\b/g, "-"],
-            [/\bmodulo\b/g, "%"],
-            [/\bmod\b/g, "%"],
-            [/\bpower of\b/g, "^"],
-            [/\bsquared\b/g, "^2"],
-            [/\bcubed\b/g, "^3"],
-            [/যোগ/g, "+"],
-            [/বিয়োগ/g, "-"],
-            [/বিয়োগ/g, "-"],
-            [/গুণ/g, "*"],
-            [/ভাগ/g, "/"],
-            [/जोड़/g, "+"],
-            [/जोड़ो/g, "+"],
-            [/घटाव/g, "-"],
-            [/गुणा/g, "*"],
-            [/भाग/g, "/"]
-        ];
+function normalizeDigits(value) {
+    const map = {
+        "০":"0","১":"1","২":"2","৩":"3","৪":"4",
+        "৫":"5","৬":"6","৭":"7","৮":"8","৯":"9",
+        "०":"0","१":"1","२":"2","३":"3","४":"4",
+        "५":"5","६":"6","७":"7","८":"8","९":"9"
+    };
+    return String(value).replace(/[০-৯०-९]/g, c => map[c]);
+}
 
-        for (const [pattern, replacement] of replacements) {
-            s = s.replace(pattern, replacement);
+function normalizeText(value) {
+    return normalizeDigits(String(value || ""))
+        .toLowerCase()
+        .replace(/[×]/g, "*")
+        .replace(/[÷]/g, "/")
+        .replace(/[−–]/g, "-")
+        .replace(/π/g, "pi")
+        .replace(/\s+/g, " ")
+        .trim();
+}
+
+function factorial(n) {
+    if (!Number.isInteger(n) || n < 0 || n > 170) {
+        throw new Error("Factorial requires an integer from 0 to 170.");
+    }
+    let result = 1;
+    for (let i = 2; i <= n; i++) result *= i;
+    return checked(result);
+}
+
+function gcd(a, b) {
+    a = Math.abs(Math.trunc(a));
+    b = Math.abs(Math.trunc(b));
+    while (b) [a, b] = [b, a % b];
+    return a;
+}
+
+function lcm(a, b) {
+    if (!Number.isInteger(a) || !Number.isInteger(b)) {
+        throw new Error("LCM requires integers.");
+    }
+    if (!a || !b) return 0;
+    return checked(Math.abs(a / gcd(a, b) * b));
+}
+
+function isPrime(n) {
+    if (!Number.isSafeInteger(n) || n < 2) return false;
+    if (n % 2 === 0) return n === 2;
+    for (let i = 3; i <= Math.sqrt(n); i += 2) {
+        if (n % i === 0) return false;
+    }
+    return true;
+}
+
+function primeFactors(n) {
+    if (!Number.isSafeInteger(n) || n < 1) {
+        throw new Error("Enter a positive integer.");
+    }
+    const factors = [];
+    for (let d = 2; d <= Math.sqrt(n); d++) {
+        while (n % d === 0) {
+            factors.push(d);
+            n /= d;
+        }
+    }
+    if (n > 1) factors.push(n);
+    return factors;
+}
+
+function toRadians(degrees) {
+    return degrees * Math.PI / 180;
+}
+
+function mathFunction(name, args) {
+    const x = args[0];
+
+    switch (name) {
+        case "sqrt": return checked(Math.sqrt(x));
+        case "cbrt": return checked(Math.cbrt(x));
+        case "abs": return Math.abs(x);
+        case "floor": return Math.floor(x);
+        case "ceil": return Math.ceil(x);
+        case "round": return Math.round(x);
+        case "sin": return checked(Math.sin(toRadians(x)));
+        case "cos": return checked(Math.cos(toRadians(x)));
+        case "tan":
+            if (Math.abs(Math.cos(toRadians(x))) < EPSILON)
+                throw new Error("Tangent is undefined.");
+            return checked(Math.tan(toRadians(x)));
+        case "asin": return checked(Math.asin(x) * 180 / Math.PI);
+        case "acos": return checked(Math.acos(x) * 180 / Math.PI);
+        case "atan": return checked(Math.atan(x) * 180 / Math.PI);
+        case "log": return checked(Math.log10(x));
+        case "ln": return checked(Math.log(x));
+        case "exp": return checked(Math.exp(x));
+        case "fact":
+        case "factorial": return factorial(x);
+        case "gcd": return gcd(args[0], args[1]);
+        case "lcm": return lcm(args[0], args[1]);
+        case "min": return Math.min(...args);
+        case "max": return Math.max(...args);
+        default: throw new Error("Unknown function: " + name);
+    }
+}
+
+/* ---------- EXPRESSION PARSER ---------- */
+
+function tokenize(input) {
+    const tokens = [];
+    const regex =
+        /\d+(?:\.\d*)?(?:e[+-]?\d+)?|(?:\.\d+)|[a-zA-Z]+|[()+\-*/%^!,]/gy;
+
+    let position = 0;
+
+    while (position < input.length) {
+        if (/\s/.test(input[position])) {
+            position++;
+            continue;
         }
 
-        return s.trim();
+        regex.lastIndex = position;
+        const match = regex.exec(input);
+
+        if (!match) throw new Error("Invalid expression.");
+
+        tokens.push(match[0]);
+        position = regex.lastIndex;
+
+        if (tokens.length > 250) {
+            throw new Error("Expression is too long.");
+        }
     }
 
-    // -------------------------------------------------------
-    // 2. SAFE RESULT CHECK
-    // -------------------------------------------------------
+    return tokens;
+}
 
-    function checked(value) {
-        if (
-            typeof value !== "number" ||
-            !Number.isFinite(value) ||
-            Math.abs(value) > MAX_RESULT
-        ) {
-            throw new Error("Result out of range");
+function parseExpression(input) {
+    const tokens = tokenize(input);
+    let position = 0;
+
+    function peek() {
+        return tokens[position];
+    }
+
+    function consume() {
+        return tokens[position++];
+    }
+
+    function primary() {
+        const token = consume();
+
+        if (token === undefined) throw new Error("Incomplete expression.");
+
+        if (token === "(") {
+            const value = expression();
+            if (consume() !== ")") throw new Error("Missing closing bracket.");
+            return value;
+        }
+
+        if (token === "pi") return Math.PI;
+        if (token === "e") return Math.E;
+
+        if (/^(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i.test(token)) {
+            return checked(Number(token));
+        }
+
+        if (/^[a-z]+$/i.test(token)) {
+            const name = token;
+
+            if (consume() !== "(") throw new Error("Function needs parentheses.");
+
+            const args = [];
+
+            if (peek() !== ")") {
+                do {
+                    args.push(expression());
+                    if (peek() !== ",") break;
+                    consume();
+                } while (true);
+            }
+
+            if (consume() !== ")") throw new Error("Missing function bracket.");
+
+            return checked(mathFunction(name, args));
+        }
+
+        throw new Error("Unexpected token: " + token);
+    }
+
+    function postfix() {
+        let value = primary();
+
+        while (peek() === "!") {
+            consume();
+            value = factorial(value);
         }
 
         return value;
     }
 
-    function cleanNumber(value) {
-        checked(value);
-
-        if (Math.abs(value) < EPSILON) return 0;
-
-        if (Number.isInteger(value)) return value;
-
-        return Number(value.toPrecision(12));
+    function unary() {
+        if (peek() === "+") {
+            consume();
+            return unary();
+        }
+        if (peek() === "-") {
+            consume();
+            return -unary();
+        }
+        return postfix();
     }
 
-    // -------------------------------------------------------
-    // 3. MATHEMATICAL FUNCTIONS
-    // -------------------------------------------------------
-
-    function factorial(n) {
-        if (!Number.isInteger(n) || n < 0 || n > 170) {
-            throw new Error("Factorial requires integer 0 to 170");
+    function power() {
+        let value = unary();
+        if (peek() === "^") {
+            consume();
+            value = Math.pow(value, unary());
         }
-
-        let result = 1;
-
-        for (let i = 2; i <= n; i++) {
-            result *= i;
-        }
-
-        return checked(result);
+        return checked(value);
     }
 
-    function gcd(a, b) {
-        a = Math.abs(Math.trunc(a));
-        b = Math.abs(Math.trunc(b));
+    function term() {
+        let value = power();
 
-        while (b !== 0) {
-            const t = b;
-            b = a % b;
-            a = t;
+        while (["*", "/", "%"].includes(peek())) {
+            const operator = consume();
+            const right = power();
+
+            if (operator === "*") value *= right;
+            if (operator === "/") {
+                if (right === 0) throw new Error("Division by zero.");
+                value /= right;
+            }
+            if (operator === "%") {
+                if (right === 0) throw new Error("Division by zero.");
+                value %= right;
+            }
         }
-
-        return a;
+        return checked(value);
     }
 
-    function lcm(a, b) {
-        if (!Number.isInteger(a) || !Number.isInteger(b)) {
-            throw new Error("LCM requires integers");
+    function expression() {
+        let value = term();
+
+        while (peek() === "+" || peek() === "-") {
+            const operator = consume();
+            const right = term();
+            value = operator === "+" ? value + right : value - right;
         }
 
-        if (a === 0 || b === 0) return 0;
-
-        return checked(Math.abs((a / gcd(a, b)) * b));
+        return checked(value);
     }
 
-    function toRadians(degrees) {
-        return degrees * Math.PI / 180;
+    const result = expression();
+
+    if (position !== tokens.length) {
+        throw new Error("Unexpected expression content.");
     }
 
-    function mathFunction(name, args) {
-        const x = args[0];
+    return checked(result);
+}
 
-        switch (name) {
-            case "sin":
-                return Math.sin(toRadians(x));
+/* ---------- ALGEBRA ---------- */
 
-            case "cos":
-                return Math.cos(toRadians(x));
+function solveLinear(a, b, c) {
+    if (![a,b,c].every(valid)) throw new Error("Invalid coefficients.");
 
-            case "tan":
-                if (Math.abs(Math.cos(toRadians(x))) < EPSILON) {
-                    throw new Error("Tan is undefined");
-                }
-                return Math.tan(toRadians(x));
-
-            case "cot":
-                if (Math.abs(Math.sin(toRadians(x))) < EPSILON) {
-                    throw new Error("Cot is undefined");
-                }
-                return 1 / Math.tan(toRadians(x));
-
-            case "sec":
-                if (Math.abs(Math.cos(toRadians(x))) < EPSILON) {
-                    throw new Error("Sec is undefined");
-                }
-                return 1 / Math.cos(toRadians(x));
-
-            case "cosec":
-            case "csc":
-                if (Math.abs(Math.sin(toRadians(x))) < EPSILON) {
-                    throw new Error("Cosec is undefined");
-                }
-                return 1 / Math.sin(toRadians(x));
-
-            case "asin":
-                return Math.asin(x) * 180 / Math.PI;
-
-            case "acos":
-                return Math.acos(x) * 180 / Math.PI;
-
-            case "atan":
-                return Math.atan(x) * 180 / Math.PI;
-
-            case "sqrt":
-                if (x < 0) throw new Error("Invalid square root");
-                return Math.sqrt(x);
-
-            case "cbrt":
-                return Math.cbrt(x);
-
-            case "abs":
-                return Math.abs(x);
-
-            case "floor":
-                return Math.floor(x);
-
-            case "ceil":
-                return Math.ceil(x);
-
-            case "round":
-                return Math.round(x);
-
-            case "log":
-                if (x <= 0) throw new Error("Log requires positive number");
-
-                if (args.length > 1) {
-                    const base = args[1];
-
-                    if (base <= 0 || base === 1) {
-                        throw new Error("Invalid logarithm base");
-                    }
-
-                    return Math.log(x) / Math.log(base);
-                }
-
-                return Math.log10(x);
-
-            case "ln":
-                if (x <= 0) throw new Error("Ln requires positive number");
-                return Math.log(x);
-
-            case "exp":
-                return Math.exp(x);
-
-            case "min":
-                return Math.min.apply(null, args);
-
-            case "max":
-                return Math.max.apply(null, args);
-
-            case "gcd":
-                return gcd(x, args[1]);
-
-            case "lcm":
-                return lcm(x, args[1]);
-
-            case "fact":
-            case "factorial":
-                return factorial(x);
-
-            default:
-                throw new Error("Unknown function: " + name);
-        }
+    if (Math.abs(a) < EPSILON) {
+        return Math.abs(b-c) < EPSILON
+            ? { type:"infinite", answer:"Infinite solutions" }
+            : { type:"none", answer:"No solution" };
     }
 
-    // -------------------------------------------------------
-    // 4. TOKENIZER
-    // -------------------------------------------------------
+    return {
+        type:"linear",
+        answer:checked((c-b)/a)
+    };
+}
 
-    function tokenize(expression) {
-        const tokens = [];
-        let position = 0;
+function solveQuadratic(a, b, c) {
+    if (![a,b,c].every(valid)) throw new Error("Invalid coefficients.");
 
-        while (position < expression.length) {
-            const rest = expression.slice(position);
+    if (Math.abs(a) < EPSILON) return solveLinear(b,c,0);
 
-            if (/^\s+/.test(rest)) {
-                position += rest.match(/^\s+/)[0].length;
-                continue;
-            }
+    const d = b*b - 4*a*c;
 
-            const number = rest.match(
-                /^(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?/i
-            );
-
-            if (number) {
-                tokens.push({
-                    type: "number",
-                    value: Number(number[0])
-                });
-
-                position += number[0].length;
-                continue;
-            }
-
-            const identifier = rest.match(/^[a-z]+/i);
-
-            if (identifier) {
-                tokens.push({
-                    type: "identifier",
-                    value: identifier[0].toLowerCase()
-                });
-
-                position += identifier[0].length;
-                continue;
-            }
-
-            const character = rest[0];
-
-            if ("+-*/%^(),!".includes(character)) {
-                tokens.push({
-                    type: "operator",
-                    value: character
-                });
-
-                position++;
-                continue;
-            }
-
-            throw new Error("Invalid mathematical character");
-        }
-
-        if (tokens.length > MAX_TOKENS) {
-            throw new Error("Too many mathematical tokens");
-        }
-
-        return tokens;
+    if (d < -EPSILON) {
+        return { type:"complex", answer:"No real roots", discriminant:checked(d) };
     }
 
-    // -------------------------------------------------------
-    // 5. EXPRESSION PARSER
-    // -------------------------------------------------------
-
-    function parseExpression(tokens) {
-        let index = 0;
-
-        function peek() {
-            return tokens[index] || null;
-        }
-
-        function consume(value) {
-            if (peek() && peek().value === value) {
-                index++;
-                return true;
-            }
-
-            return false;
-        }
-
-        function startsPrimary(token) {
-            return token && (
-                token.type === "number" ||
-                token.type === "identifier" ||
-                token.value === "("
-            );
-        }
-
-        function primary() {
-            const token = peek();
-
-            if (!token) {
-                throw new Error("Expression incomplete");
-            }
-
-            if (consume("(")) {
-                const value = expression();
-
-                if (!consume(")")) {
-                    throw new Error("Missing closing bracket");
-                }
-
-                return value;
-            }
-
-            if (token.type === "number") {
-                index++;
-                return checked(token.value);
-            }
-
-            if (token.type === "identifier") {
-                index++;
-
-                const name = token.value;
-
-                if (name === "pi") return Math.PI;
-                if (name === "e") return Math.E;
-
-                if (!consume("(")) {
-                    throw new Error("Function requires brackets");
-                }
-
-                const args = [];
-
-                if (!consume(")")) {
-                    args.push(expression());
-
-                    while (consume(",")) {
-                        args.push(expression());
-                    }
-
-                    if (!consume(")")) {
-                        throw new Error("Missing function bracket");
-                    }
-                }
-
-                if (!args.length) {
-                    throw new Error("Function argument missing");
-                }
-
-                return checked(mathFunction(name, args));
-            }
-
-            throw new Error("Number expected");
-        }
-
-        function postfix() {
-            let value = primary();
-
-            while (consume("!")) {
-                value = factorial(value);
-            }
-
-            return value;
-        }
-
-        function power() {
-            let value = postfix();
-
-            if (consume("^")) {
-                const exponent = unary();
-                value = checked(Math.pow(value, exponent));
-            }
-
-            return value;
-        }
-
-        function unary() {
-            if (consume("+")) return unary();
-            if (consume("-")) return -unary();
-
-            return power();
-        }
-
-        function term() {
-            let value = unary();
-
-            while (true) {
-                const token = peek();
-
-                if (!token) break;
-
-                if (["*", "/", "%"].includes(token.value)) {
-                    const operator = token.value;
-                    index++;
-
-                    const right = unary();
-
-                    if (
-                        (operator === "/" || operator === "%") &&
-                        right === 0
-                    ) {
-                        throw new Error("Division by zero");
-                    }
-
-                    if (operator === "*") value *= right;
-                    if (operator === "/") value /= right;
-                    if (operator === "%") value %= right;
-
-                    value = checked(value);
-                    continue;
-                }
-
-                // Implicit multiplication: 2(3), 2pi, 2sin(30)
-                if (startsPrimary(token)) {
-                    value = checked(value * unary());
-                    continue;
-                }
-
-                break;
-            }
-
-            return value;
-        }
-
-        function expression() {
-            let value = term();
-
-            while (peek()) {
-                const operator = peek().value;
-
-                if (operator !== "+" && operator !== "-") {
-                    break;
-                }
-
-                index++;
-
-                const right = term();
-
-                value = operator === "+"
-                    ? value + right
-                    : value - right;
-
-                value = checked(value);
-            }
-
-            return value;
-        }
-
-        const result = expression();
-
-        if (index !== tokens.length) {
-            throw new Error("Unexpected mathematical input");
-        }
-
-        return checked(result);
-    }
-
-    // PART 1 END
-    // PART 2 WILL BE ADDED BELOW
-
-
-/* =========================================================
-   POWNIN ADVANCED MATH ENGINE v3.0
-   PART 2/3 — ADVANCED ARITHMETIC SOLVERS
-   ========================================================= */
-
-    // -------------------------------------------------------
-    // 6. INTEGER VALIDATION
-    // -------------------------------------------------------
-
-    function validInteger(n) {
-        return Number.isSafeInteger(n);
-    }
-
-    function requirePositive(n, name) {
-        if (!Number.isFinite(n) || n <= 0) {
-            throw new Error(name + " must be positive");
-        }
-    }
-
-    // -------------------------------------------------------
-    // 7. LCM / HCF
-    // -------------------------------------------------------
-
-    function solveLCM(a, b) {
-        if (!validInteger(a) || !validInteger(b)) {
-            throw new Error("LCM requires safe integers");
-        }
-
-        return lcm(a, b);
-    }
-
-    function solveHCF(a, b) {
-        if (!validInteger(a) || !validInteger(b)) {
-            throw new Error("HCF requires safe integers");
-        }
-
-        return gcd(a, b);
-    }
-
-    // -------------------------------------------------------
-    // 8. FRACTIONS
-    // -------------------------------------------------------
-
-    function fraction(a, b) {
-        if (!validInteger(a) || !validInteger(b) || b === 0) {
-            throw new Error("Invalid fraction");
-        }
-
-        if (b < 0) {
-            a = -a;
-            b = -b;
-        }
-
-        const divisor = gcd(a, b);
-
+    if (Math.abs(d) <= EPSILON) {
         return {
-            numerator: a / divisor,
-            denominator: b / divisor,
-            decimal: a / b
+            type:"quadratic",
+            answer:[checked(-b/(2*a))],
+            discriminant:0
         };
     }
 
-    function fractionOperation(a, b, c, d, operation) {
-        if (![a, b, c, d].every(validInteger) || b === 0 || d === 0) {
-            throw new Error("Invalid fraction values");
-        }
+    return {
+        type:"quadratic",
+        answer:[
+            checked((-b+Math.sqrt(d))/(2*a)),
+            checked((-b-Math.sqrt(d))/(2*a))
+        ],
+        discriminant:checked(d)
+    };
+}
 
-        let numerator;
-        let denominator;
-
-        if (operation === "+") {
-            numerator = a * d + c * b;
-            denominator = b * d;
-        } else if (operation === "-") {
-            numerator = a * d - c * b;
-            denominator = b * d;
-        } else if (operation === "*") {
-            numerator = a * c;
-            denominator = b * d;
-        } else if (operation === "/") {
-            if (c === 0) throw new Error("Division by zero");
-            numerator = a * d;
-            denominator = b * c;
-        } else {
-            throw new Error("Unknown fraction operation");
-        }
-
-        if (!Number.isSafeInteger(numerator) ||
-            !Number.isSafeInteger(denominator)) {
-            throw new Error("Fraction is too large");
-        }
-
-        return fraction(numerator, denominator);
+function solveSystem2x2(a1,b1,c1,a2,b2,c2) {
+    if (![a1,b1,c1,a2,b2,c2].every(valid)) {
+        throw new Error("Invalid coefficients.");
     }
 
-    // -------------------------------------------------------
-    // 9. PERCENTAGE
-    // -------------------------------------------------------
+    const d = a1*b2-a2*b1;
 
-    function percentage(value, total) {
-        if (total === 0) {
-            throw new Error("Total cannot be zero");
-        }
-
-        return checked((value / total) * 100);
+    if (Math.abs(d) < EPSILON) {
+        return { type:"no-unique-solution", answer:null };
     }
 
-    function percentageOf(percent, value) {
-        return checked((percent / 100) * value);
+    return {
+        type:"system",
+        answer:{
+            x:checked((c1*b2-c2*b1)/d),
+            y:checked((a1*c2-a2*c1)/d)
+        }
+    };
+}
+
+function cleanPolynomial(poly) {
+    if (!Array.isArray(poly) || !poly.length || poly.length > 51) {
+        throw new Error("Invalid polynomial.");
     }
 
-    function percentageChange(oldValue, newValue) {
-        if (oldValue === 0) {
-            throw new Error("Old value cannot be zero");
-        }
+    const result = poly.map(n => {
+        if (!valid(n)) throw new Error("Invalid coefficient.");
+        return checked(n);
+    });
 
-        return checked(
-            ((newValue - oldValue) / Math.abs(oldValue)) * 100
-        );
+    while (result.length > 1 && Math.abs(result.at(-1)) < EPSILON) {
+        result.pop();
     }
 
-    // -------------------------------------------------------
-    // 10. RATIO
-    // -------------------------------------------------------
+    return result;
+}
 
-    function simplifyRatio(a, b) {
-        if (!validInteger(a) || !validInteger(b) || (a === 0 && b === 0)) {
-            throw new Error("Invalid ratio");
+function polynomialAdd(p,q) {
+    p = cleanPolynomial(p);
+    q = cleanPolynomial(q);
+
+    return cleanPolynomial(
+        Array.from(
+            {length:Math.max(p.length,q.length)},
+            (_,i)=>(p[i]||0)+(q[i]||0)
+        )
+    );
+}
+
+function polynomialMultiply(p,q) {
+    p = cleanPolynomial(p);
+    q = cleanPolynomial(q);
+
+    const result = Array(p.length+q.length-1).fill(0);
+
+    p.forEach((a,i)=>q.forEach((b,j)=>{
+        result[i+j] += a*b;
+    }));
+
+    return cleanPolynomial(result);
+}
+
+function polynomialEvaluate(poly,x) {
+    poly = cleanPolynomial(poly);
+    if (!valid(x)) throw new Error("Invalid x value.");
+
+    let result = 0;
+    for (let i=poly.length-1;i>=0;i--) {
+        result = result*x+poly[i];
+    }
+    return checked(result);
+}
+
+// PART 1 END
+
+/* =====================================================
+   PART 2/5 — NUMBER THEORY + ADVANCED ARITHMETIC
+   ===================================================== */
+
+// ---------- NUMBER THEORY ----------
+
+function hcf(...numbers) {
+    if (!numbers.length || !numbers.every(Number.isSafeInteger)) {
+        throw new Error("HCF requires integers.");
+    }
+
+    return numbers.reduce((a,b)=>gcd(a,b));
+}
+
+function lcmMany(...numbers) {
+    if (!numbers.length || !numbers.every(Number.isSafeInteger)) {
+        throw new Error("LCM requires integers.");
+    }
+
+    return numbers.reduce((a,b)=>lcm(a,b));
+}
+
+function divisors(n) {
+    if (!Number.isSafeInteger(n) || n < 1) {
+        throw new Error("Enter a positive integer.");
+    }
+
+    const result = [];
+
+    for (let i=1;i<=Math.sqrt(n);i++) {
+        if (n%i===0) {
+            result.push(i);
+            if (i!==n/i) result.push(n/i);
         }
+    }
 
-        const divisor = gcd(a, b);
+    return result.sort((a,b)=>a-b);
+}
 
+function primeFactorization(n) {
+    return primeFactors(n);
+}
+
+function isPerfectSquare(n) {
+    if (!Number.isSafeInteger(n) || n<0) return false;
+    return Number.isInteger(Math.sqrt(n));
+}
+
+function isPerfectCube(n) {
+    if (!Number.isSafeInteger(n)) return false;
+    return Math.round(Math.cbrt(n)) ** 3 === n;
+}
+
+// ---------- FRACTIONS ----------
+
+function fraction(numerator,denominator) {
+    if (!Number.isSafeInteger(numerator) ||
+        !Number.isSafeInteger(denominator) ||
+        denominator===0) {
+        throw new Error("Invalid fraction.");
+    }
+
+    const sign = denominator<0 ? -1 : 1;
+    const divisor = gcd(numerator,denominator);
+
+    return {
+        numerator:sign*numerator/divisor,
+        denominator:Math.abs(denominator)/divisor
+    };
+}
+
+function fractionAdd(a,b) {
+    return fraction(
+        a.numerator*b.denominator+b.numerator*a.denominator,
+        a.denominator*b.denominator
+    );
+}
+
+function fractionSubtract(a,b) {
+    return fraction(
+        a.numerator*b.denominator-b.numerator*a.denominator,
+        a.denominator*b.denominator
+    );
+}
+
+function fractionMultiply(a,b) {
+    return fraction(
+        a.numerator*b.numerator,
+        a.denominator*b.denominator
+    );
+}
+
+function fractionDivide(a,b) {
+    if (b.numerator===0) throw new Error("Division by zero.");
+
+    return fraction(
+        a.numerator*b.denominator,
+        a.denominator*b.numerator
+    );
+}
+
+// ---------- PERCENTAGE ----------
+
+function percentage(value,total) {
+    if (!valid(value)||!valid(total)||total===0) {
+        throw new Error("Invalid percentage values.");
+    }
+
+    return checked(value/total*100);
+}
+
+function percentageOf(percent,total) {
+    if (!valid(percent)||!valid(total)) {
+        throw new Error("Invalid values.");
+    }
+
+    return checked(percent*total/100);
+}
+
+function percentageChange(oldValue,newValue) {
+    if (!valid(oldValue)||!valid(newValue)||oldValue===0) {
+        throw new Error("Old value cannot be zero.");
+    }
+
+    return checked((newValue-oldValue)/Math.abs(oldValue)*100);
+}
+
+// ---------- RATIO ----------
+
+function simplifyRatio(a,b) {
+    if (!Number.isSafeInteger(a)||!Number.isSafeInteger(b)) {
+        throw new Error("Ratio requires integers.");
+    }
+
+    if (a===0&&b===0) throw new Error("Invalid ratio.");
+
+    const divisor = gcd(a,b);
+
+    return {
+        first:a/divisor,
+        second:b/divisor
+    };
+}
+
+function divideInRatio(total,a,b) {
+    if (!valid(total)||!Number.isFinite(a)||!Number.isFinite(b) ||
+        a<0||b<0||a+b===0) {
+        throw new Error("Invalid ratio.");
+    }
+
+    return {
+        first:checked(total*a/(a+b)),
+        second:checked(total*b/(a+b))
+    };
+}
+
+// ---------- PROFIT / LOSS / DISCOUNT ----------
+
+function profitLoss(costPrice,sellingPrice) {
+    if (!valid(costPrice)||!valid(sellingPrice)||costPrice<=0) {
+        throw new Error("Invalid price.");
+    }
+
+    const difference = sellingPrice-costPrice;
+
+    return {
+        type:difference>0?"profit":difference<0?"loss":"no-profit-no-loss",
+        amount:checked(Math.abs(difference)),
+        percentage:checked(Math.abs(difference)/costPrice*100)
+    };
+}
+
+function discount(originalPrice,discountPercent) {
+    if (!valid(originalPrice)||!valid(discountPercent) ||
+        originalPrice<0||discountPercent<0||discountPercent>100) {
+        throw new Error("Invalid discount.");
+    }
+
+    const amount = originalPrice*discountPercent/100;
+
+    return {
+        discountAmount:checked(amount),
+        finalPrice:checked(originalPrice-amount)
+    };
+}
+
+// ---------- INTEREST ----------
+
+function simpleInterest(principal,rate,time) {
+    if (![principal,rate,time].every(valid) ||
+        principal<0||rate<0||time<0) {
+        throw new Error("Invalid interest values.");
+    }
+
+    const interest = principal*rate*time/100;
+
+    return {
+        interest:checked(interest),
+        total:checked(principal+interest)
+    };
+}
+
+function compoundInterest(principal,rate,time,frequency) {
+    frequency = frequency===undefined ? 1 : frequency;
+
+    if (![principal,rate,time,frequency].every(valid) ||
+        principal<0||rate<0||time<0||frequency<=0) {
+        throw new Error("Invalid compound interest values.");
+    }
+
+    const amount = principal*Math.pow(
+        1+rate/(100*frequency),
+        frequency*time
+    );
+
+    return {
+        interest:checked(amount-principal),
+        total:checked(amount)
+    };
+}
+
+// ---------- PERMUTATION / COMBINATION ----------
+
+function permutation(n,r) {
+    if (!Number.isInteger(n)||!Number.isInteger(r)||
+        n<0||r<0||r>n) {
+        throw new Error("Invalid n or r.");
+    }
+
+    let result = 1;
+
+    for (let i=0;i<r;i++) {
+        result *= n-i;
+        if (!Number.isFinite(result)) {
+            throw new Error("Result too large.");
+        }
+    }
+
+    return checked(result);
+}
+
+function combination(n,r) {
+    if (!Number.isInteger(n)||!Number.isInteger(r)||
+        n<0||r<0||r>n) {
+        throw new Error("Invalid n or r.");
+    }
+
+    r = Math.min(r,n-r);
+
+    let result = 1;
+
+    for (let i=1;i<=r;i++) {
+        result = result*(n-r+i)/i;
+        if (!Number.isFinite(result)) {
+            throw new Error("Result too large.");
+        }
+    }
+
+    return checked(result);
+}
+
+// ---------- POLYNOMIAL FACTORIZATION ----------
+// Coefficients are stored in ascending order.
+// Example: x² - 5x + 6 = [6,-5,1]
+
+function factorPolynomial(poly) {
+    poly = cleanPolynomial(poly);
+
+    if (!poly.every(Number.isInteger)) {
         return {
-            first: a / divisor,
-            second: b / divisor
+            success:false,
+            message:"Integer coefficients are required."
         };
     }
 
-    function divideInRatio(total, a, b) {
-        if (a < 0 || b < 0 || a + b === 0) {
-            throw new Error("Invalid ratio");
-        }
-
-        return {
-            first: checked(total * a / (a + b)),
-            second: checked(total * b / (a + b))
-        };
+    if (poly.length<2||poly.length>21) {
+        throw new Error("Unsupported polynomial degree.");
     }
 
-    // -------------------------------------------------------
-    // 11. PROFIT / LOSS / DISCOUNT
-    // -------------------------------------------------------
+    const constant = Math.abs(poly[0]);
+    const leading = Math.abs(poly[poly.length-1]);
 
-    function profitLoss(costPrice, sellingPrice) {
-        if (costPrice <= 0 || sellingPrice < 0) {
-            throw new Error("Invalid price");
-        }
-
-        const difference = sellingPrice - costPrice;
-
-        return {
-            amount: Math.abs(difference),
-            percentage: checked(Math.abs(difference) / costPrice * 100),
-            type: difference > 0 ? "profit" :
-                  difference < 0 ? "loss" : "no profit no loss"
-        };
+    if (leading===0||constant>1000000||leading>1000000) {
+        throw new Error("Coefficients are outside the supported range.");
     }
 
-    function discount(markedPrice, discountPercent) {
-        if (markedPrice < 0 || discountPercent < 0 || discountPercent > 100) {
-            throw new Error("Invalid discount");
-        }
+    function getDivisors(n) {
+        if (n===0) return [0];
 
-        const amount = percentageOf(discountPercent, markedPrice);
+        const result = [];
 
-        return {
-            discount: amount,
-            finalPrice: checked(markedPrice - amount)
-        };
-    }
-
-    // -------------------------------------------------------
-    // 12. SIMPLE / COMPOUND INTEREST
-    // -------------------------------------------------------
-
-    function simpleInterest(principal, rate, years) {
-        requirePositive(principal, "Principal");
-
-        if (rate < 0 || years < 0) {
-            throw new Error("Rate and time cannot be negative");
-        }
-
-        const interest = checked(principal * rate * years / 100);
-
-        return {
-            interest: interest,
-            total: checked(principal + interest)
-        };
-    }
-
-    function compoundInterest(principal, rate, years, frequency) {
-        requirePositive(principal, "Principal");
-
-        frequency = frequency || 1;
-
-        if (rate < 0 || years < 0 || frequency <= 0) {
-            throw new Error("Invalid compound interest values");
-        }
-
-        const total = checked(
-            principal * Math.pow(
-                1 + rate / (100 * frequency),
-                frequency * years
-            )
-        );
-
-        return {
-            interest: checked(total - principal),
-            total: total
-        };
-    }
-
-    // -------------------------------------------------------
-    // 13. TIME / SPEED / DISTANCE
-    // -------------------------------------------------------
-
-    function speedDistanceTime(distance, time) {
-        if (distance < 0 || time <= 0) {
-            throw new Error("Invalid distance or time");
-        }
-
-        return checked(distance / time);
-    }
-
-    function distanceFromSpeed(speed, time) {
-        if (speed < 0 || time < 0) {
-            throw new Error("Invalid speed or time");
-        }
-
-        return checked(speed * time);
-    }
-
-    function timeFromDistance(distance, speed) {
-        if (distance < 0 || speed <= 0) {
-            throw new Error("Invalid distance or speed");
-        }
-
-        return checked(distance / speed);
-    }
-
-    // -------------------------------------------------------
-    // 14. TRAIN PROBLEMS
-    // -------------------------------------------------------
-
-    function trainCrossPole(trainLength, speed) {
-        requirePositive(trainLength, "Train length");
-        requirePositive(speed, "Speed");
-
-        // speed is assumed to be km/h
-        const speedMps = speed * 1000 / 3600;
-
-        return checked(trainLength / speedMps);
-    }
-
-    function trainCrossPlatform(trainLength, platformLength, speed) {
-        requirePositive(trainLength, "Train length");
-        requirePositive(platformLength, "Platform length");
-        requirePositive(speed, "Speed");
-
-        const speedMps = speed * 1000 / 3600;
-
-        return checked(
-            (trainLength + platformLength) / speedMps
-        );
-    }
-
-    function twoTrainsCross(lengthA, lengthB, speedA, speedB, opposite) {
-        requirePositive(lengthA, "Train A length");
-        requirePositive(lengthB, "Train B length");
-        requirePositive(speedA, "Train A speed");
-        requirePositive(speedB, "Train B speed");
-
-        // Speeds are assumed to be km/h.
-        const relativeSpeed = opposite
-            ? speedA + speedB
-            : Math.abs(speedA - speedB);
-
-        if (relativeSpeed === 0) {
-            throw new Error("Relative speed is zero");
-        }
-
-        const metresPerSecond = relativeSpeed * 1000 / 3600;
-
-        return checked(
-            (lengthA + lengthB) / metresPerSecond
-        );
-    }
-
-    // -------------------------------------------------------
-    // 15. WORK / TIME / PIPES
-    // -------------------------------------------------------
-
-    function combinedWorkTime(times) {
-        if (!Array.isArray(times) || !times.length) {
-            throw new Error("Work times required");
-        }
-
-        let rate = 0;
-
-        for (const time of times) {
-            requirePositive(time, "Work time");
-            rate += 1 / time;
-        }
-
-        return checked(1 / rate);
-    }
-
-    function pipeTime(inletTimes, outletTimes) {
-        let rate = 0;
-
-        for (const time of inletTimes || []) {
-            requirePositive(time, "Inlet time");
-            rate += 1 / time;
-        }
-
-        for (const time of outletTimes || []) {
-            requirePositive(time, "Outlet time");
-            rate -= 1 / time;
-        }
-
-        if (rate <= 0) {
-            throw new Error("Tank cannot be filled at this rate");
-        }
-
-        return checked(1 / rate);
-    }
-
-    // -------------------------------------------------------
-    // 16. AVERAGE
-    // -------------------------------------------------------
-
-    function average(numbers) {
-        if (!Array.isArray(numbers) || !numbers.length) {
-            throw new Error("Numbers required");
-        }
-
-        let sum = 0;
-
-        for (const n of numbers) {
-            if (!Number.isFinite(n)) {
-                throw new Error("Invalid number");
-            }
-
-            sum += n;
-        }
-
-        return checked(sum / numbers.length);
-    }
-
-    // -------------------------------------------------------
-    // 17. PERMUTATION / COMBINATION
-    // -------------------------------------------------------
-
-    function permutation(n, r) {
-        if (
-            !Number.isInteger(n) ||
-            !Number.isInteger(r) ||
-            n < 0 || r < 0 || r > n ||
-            n > 170
-        ) {
-            throw new Error("Invalid n or r");
-        }
-
-        let result = 1;
-
-        for (let i = 0; i < r; i++) {
-            result *= n - i;
-            checked(result);
+        for (let i=1;i<=n;i++) {
+            if (n%i===0) result.push(i);
         }
 
         return result;
     }
 
-    function combination(n, r) {
-        if (
-            !Number.isInteger(n) ||
-            !Number.isInteger(r) ||
-            n < 0 || r < 0 || r > n
-        ) {
-            throw new Error("Invalid n or r");
-        }
+    const candidates = new Set();
 
-        r = Math.min(r, n - r);
+    if (constant===0) {
+        candidates.add(0);
+    } else {
+        const pValues = getDivisors(constant);
+        const qValues = getDivisors(leading);
 
-        let result = 1;
-
-        for (let i = 1; i <= r; i++) {
-            result = result * (n - r + i) / i;
-            checked(result);
-        }
-
-        return cleanNumber(result);
-    }
-
-    // PART 2 END
-    // PART 3 WILL BE ADDED BELOW
-
-
-/* =========================================================
-   POWNIN ADVANCED MATH ENGINE v3.0
-   PART 3/3 — ALGEBRA + GEOMETRY + ADVANCED SOLVERS
-   ========================================================= */
-
-    // -------------------------------------------------------
-    // 18. ALGEBRA — LINEAR EQUATION
-    // -------------------------------------------------------
-
-    function solveLinear(a, b, c) {
-        // ax + b = c
-
-        if (![a, b, c].every(Number.isFinite)) {
-            throw new Error("Invalid equation");
-        }
-
-        if (a === 0) {
-            throw new Error(
-                b === c ? "Infinite solutions" : "No solution"
-            );
-        }
-
-        const x = cleanNumber((c - b) / a);
-
-        return {
-            variable: "x",
-            answer: x,
-            steps: [
-                "Given: " + a + "x + " + b + " = " + c,
-                "Move constant to the right side.",
-                a + "x = " + (c - b),
-                "Divide both sides by " + a + ".",
-                "x = " + x
-            ]
-        };
-    }
-
-    // -------------------------------------------------------
-    // 19. QUADRATIC EQUATION
-    // -------------------------------------------------------
-
-    function solveQuadratic(a, b, c) {
-        if (![a, b, c].every(Number.isFinite) || a === 0) {
-            throw new Error("Invalid quadratic equation");
-        }
-
-        const discriminant = b * b - 4 * a * c;
-
-        if (discriminant < 0) {
-            return {
-                discriminant: cleanNumber(discriminant),
-                realRoots: false,
-                answer: null,
-                message: "No real roots"
-            };
-        }
-
-        const root = Math.sqrt(discriminant);
-
-        const x1 = cleanNumber((-b + root) / (2 * a));
-        const x2 = cleanNumber((-b - root) / (2 * a));
-
-        return {
-            discriminant: cleanNumber(discriminant),
-            realRoots: true,
-            answer: [x1, x2],
-            steps: [
-                "Given: " + a + "x² + " + b + "x + " + c + " = 0",
-                "Discriminant = b² - 4ac",
-                "Discriminant = " + cleanNumber(discriminant),
-                "Apply the quadratic formula.",
-                "x = " + x1 + " or x = " + x2
-            ]
-        };
-    }
-
-    // -------------------------------------------------------
-    // 20. GEOMETRY / MENSURATION
-    // -------------------------------------------------------
-
-    const geometry = Object.freeze({
-
-        rectangleArea: function (length, width) {
-            return checked(length * width);
-        },
-
-        rectanglePerimeter: function (length, width) {
-            return checked(2 * (length + width));
-        },
-
-        squareArea: function (side) {
-            return checked(side * side);
-        },
-
-        squarePerimeter: function (side) {
-            return checked(4 * side);
-        },
-
-        triangleArea: function (base, height) {
-            return checked(base * height / 2);
-        },
-
-        circleArea: function (radius) {
-            requirePositive(radius, "Radius");
-            return checked(Math.PI * radius * radius);
-        },
-
-        circleCircumference: function (radius) {
-            requirePositive(radius, "Radius");
-            return checked(2 * Math.PI * radius);
-        },
-
-        cylinderVolume: function (radius, height) {
-            requirePositive(radius, "Radius");
-            requirePositive(height, "Height");
-            return checked(Math.PI * radius * radius * height);
-        },
-
-        sphereVolume: function (radius) {
-            requirePositive(radius, "Radius");
-            return checked(4 * Math.PI * Math.pow(radius, 3) / 3);
-        },
-
-        cubeVolume: function (side) {
-            requirePositive(side, "Side");
-            return checked(Math.pow(side, 3));
-        },
-
-        cuboidVolume: function (length, width, height) {
-            return checked(length * width * height);
-        },
-
-        coneVolume: function (radius, height) {
-            requirePositive(radius, "Radius");
-            requirePositive(height, "Height");
-            return checked(Math.PI * radius * radius * height / 3);
-        },
-
-        pythagoras: function (a, b) {
-            requirePositive(a, "Side A");
-            requirePositive(b, "Side B");
-
-            return cleanNumber(Math.sqrt(a * a + b * b));
-        },
-
-        heronArea: function (a, b, c) {
-            requirePositive(a, "Side A");
-            requirePositive(b, "Side B");
-            requirePositive(c, "Side C");
-
-            if (a + b <= c || a + c <= b || b + c <= a) {
-                throw new Error("Invalid triangle sides");
-            }
-
-            const s = (a + b + c) / 2;
-
-            return cleanNumber(
-                Math.sqrt(s * (s - a) * (s - b) * (s - c))
-            );
-        }
-    });
-
-    // -------------------------------------------------------
-    // 21. STATISTICS
-    // -------------------------------------------------------
-
-    function median(numbers) {
-        if (!numbers.length) {
-            throw new Error("Numbers required");
-        }
-
-        const sorted = numbers.slice().sort(function (a, b) {
-            return a - b;
-        });
-
-        const middle = Math.floor(sorted.length / 2);
-
-        return sorted.length % 2
-            ? sorted[middle]
-            : (sorted[middle - 1] + sorted[middle]) / 2;
-    }
-
-    function mode(numbers) {
-        if (!numbers.length) {
-            throw new Error("Numbers required");
-        }
-
-        const counts = new Map();
-
-        for (const n of numbers) {
-            counts.set(n, (counts.get(n) || 0) + 1);
-        }
-
-        const highest = Math.max.apply(null, Array.from(counts.values()));
-
-        if (highest === 1) return [];
-
-        return Array.from(counts.entries())
-            .filter(function (item) {
-                return item[1] === highest;
-            })
-            .map(function (item) {
-                return item[0];
+        pValues.forEach(p=>{
+            qValues.forEach(q=>{
+                candidates.add(p/q);
+                candidates.add(-p/q);
             });
-    }
-
-    function variance(numbers) {
-        const mean = average(numbers);
-
-        return cleanNumber(
-            numbers.reduce(function (sum, n) {
-                return sum + Math.pow(n - mean, 2);
-            }, 0) / numbers.length
-        );
-    }
-
-    function standardDeviation(numbers) {
-        return cleanNumber(Math.sqrt(variance(numbers)));
-    }
-
-    // -------------------------------------------------------
-    // 22. PROBABILITY
-    // -------------------------------------------------------
-
-    function probability(favourable, total) {
-        if (
-            total <= 0 ||
-            favourable < 0 ||
-            favourable > total
-        ) {
-            throw new Error("Invalid probability values");
-        }
-
-        return {
-            probability: cleanNumber(favourable / total),
-            percentage: cleanNumber(favourable / total * 100)
-        };
-    }
-
-    function conditionalProbability(joint, condition) {
-        if (condition <= 0) {
-            throw new Error("Condition probability must be positive");
-        }
-
-        if (joint < 0 || joint > condition) {
-            throw new Error("Invalid probability values");
-        }
-
-        return cleanNumber(joint / condition);
-    }
-
-    // -------------------------------------------------------
-    // 23. MATRIX / DETERMINANT
-    // -------------------------------------------------------
-
-    function determinant(matrix) {
-        if (!Array.isArray(matrix) || !matrix.length) {
-            throw new Error("Matrix required");
-        }
-
-        const n = matrix.length;
-
-        if (!matrix.every(function (row) {
-            return Array.isArray(row) &&
-                row.length === n &&
-                row.every(Number.isFinite);
-        })) {
-            throw new Error("Matrix must be square");
-        }
-
-        const a = matrix.map(function (row) {
-            return row.slice();
         });
-
-        let det = 1;
-
-        for (let i = 0; i < n; i++) {
-            let pivot = i;
-
-            for (let j = i + 1; j < n; j++) {
-                if (Math.abs(a[j][i]) > Math.abs(a[pivot][i])) {
-                    pivot = j;
-                }
-            }
-
-            if (Math.abs(a[pivot][i]) < EPSILON) {
-                return 0;
-            }
-
-            if (pivot !== i) {
-                const temp = a[i];
-                a[i] = a[pivot];
-                a[pivot] = temp;
-                det *= -1;
-            }
-
-            const value = a[i][i];
-            det *= value;
-
-            for (let j = i + 1; j < n; j++) {
-                const factor = a[j][i] / value;
-
-                for (let k = i + 1; k < n; k++) {
-                    a[j][k] -= factor * a[i][k];
-                }
-            }
-        }
-
-        return cleanNumber(det);
     }
 
-    // -------------------------------------------------------
-    // 24. NUMERICAL CALCULUS
-    // -------------------------------------------------------
+    let remaining = poly.slice();
+    const roots = [];
 
-    function evaluateAt(expression, x) {
-        const replaced = expression.replace(
-            /\bx\b/g,
-            "(" + String(x) + ")"
-        );
-
-        return parseExpression(tokenize(normalizeText(replaced)));
-    }
-
-    function derivative(expression, x, h) {
-        h = h || 0.00001;
-
-        requirePositive(h, "Step size");
-
-        const left = evaluateAt(expression, x - h);
-        const right = evaluateAt(expression, x + h);
-
-        return cleanNumber((right - left) / (2 * h));
-    }
-
-    function numericalIntegral(expression, a, b, intervals) {
-        intervals = intervals || 1000;
-
-        if (
-            !Number.isInteger(intervals) ||
-            intervals < 2 ||
-            intervals > 100000 ||
-            !Number.isFinite(a) ||
-            !Number.isFinite(b)
+    for (const root of candidates) {
+        while (
+            remaining.length>1 &&
+            Math.abs(polynomialEvaluate(remaining,root))<EPSILON
         ) {
-            throw new Error("Invalid integration values");
+            roots.push(checked(root));
+
+            const quotient = Array(remaining.length-1).fill(0);
+
+            quotient[quotient.length-1] =
+                remaining[remaining.length-1];
+
+            for (let i=quotient.length-2;i>=0;i--) {
+                quotient[i] =
+                    remaining[i+1]+root*quotient[i+1];
+            }
+
+            remaining = cleanPolynomial(quotient);
         }
-
-        if (intervals % 2 !== 0) intervals++;
-
-        const h = (b - a) / intervals;
-
-        let sum =
-            evaluateAt(expression, a) +
-            evaluateAt(expression, b);
-
-        for (let i = 1; i < intervals; i++) {
-            const y = evaluateAt(expression, a + i * h);
-
-            sum += (i % 2 === 0 ? 2 : 4) * y;
-        }
-
-        return cleanNumber(sum * h / 3);
     }
 
-    // -------------------------------------------------------
-    // 25. LIMIT — NUMERICAL APPROXIMATION
-    // -------------------------------------------------------
+    return {
+        success:roots.length>0,
+        roots:roots,
+        remainingCoefficients:remaining,
+        message:roots.length
+            ? "Rational roots found."
+            : "No rational roots found."
+    };
+}
 
-    function numericalLimit(expression, x, h) {
-        h = h || 0.000001;
+// PART 2 END
 
-        requirePositive(h, "Limit step");
+/* =====================================================
+   PART 3/5 — GEOMETRY + MENSURATION
+   ===================================================== */
 
-        const left = evaluateAt(expression, x - h);
-        const right = evaluateAt(expression, x + h);
+const Geometry = Object.freeze({
 
-        if (
-            Math.abs(left - right) >
-            Math.max(0.001, Math.abs(left) * 0.001)
-        ) {
-            return {
-                exists: false,
-                left: cleanNumber(left),
-                right: cleanNumber(right)
-            };
+    // ---------- 2D SHAPES ----------
+
+    square(side) {
+        if (!valid(side)||side<0) throw new Error("Invalid side.");
+
+        return {
+            area:checked(side*side),
+            perimeter:checked(4*side),
+            diagonal:checked(side*Math.sqrt(2))
+        };
+    },
+
+    rectangle(length,width) {
+        if (![length,width].every(valid)||length<0||width<0)
+            throw new Error("Invalid dimensions.");
+
+        return {
+            area:checked(length*width),
+            perimeter:checked(2*(length+width)),
+            diagonal:checked(Math.hypot(length,width))
+        };
+    },
+
+    triangle(base,height) {
+        if (![base,height].every(valid)||base<0||height<0)
+            throw new Error("Invalid dimensions.");
+
+        return {
+            area:checked(base*height/2)
+        };
+    },
+
+    triangleSides(a,b,c) {
+        if (![a,b,c].every(valid)||a<=0||b<=0||c<=0||
+            a+b<=c||a+c<=b||b+c<=a) {
+            throw new Error("Invalid triangle sides.");
+        }
+
+        const s=(a+b+c)/2;
+
+        return {
+            perimeter:checked(a+b+c),
+            area:checked(Math.sqrt(s*(s-a)*(s-b)*(s-c)))
+        };
+    },
+
+    circle(radius) {
+        if (!valid(radius)||radius<0)
+            throw new Error("Invalid radius.");
+
+        return {
+            area:checked(Math.PI*radius*radius),
+            circumference:checked(2*Math.PI*radius),
+            diameter:checked(2*radius)
+        };
+    },
+
+    semicircle(radius) {
+        if (!valid(radius)||radius<0)
+            throw new Error("Invalid radius.");
+
+        return {
+            area:checked(Math.PI*radius*radius/2),
+            perimeter:checked(Math.PI*radius+2*radius)
+        };
+    },
+
+    parallelogram(base,height,side) {
+        if (![base,height,side].every(valid)||
+            base<0||height<0||side<0)
+            throw new Error("Invalid dimensions.");
+
+        return {
+            area:checked(base*height),
+            perimeter:checked(2*(base+side))
+        };
+    },
+
+    trapezium(a,b,height,side1,side2) {
+        if (![a,b,height,side1,side2].every(valid)||
+            [a,b,height,side1,side2].some(n=>n<0))
+            throw new Error("Invalid dimensions.");
+
+        return {
+            area:checked((a+b)*height/2),
+            perimeter:checked(a+b+side1+side2)
+        };
+    },
+
+    rhombus(diagonal1,diagonal2,side) {
+        if (![diagonal1,diagonal2,side].every(valid)||
+            diagonal1<0||diagonal2<0||side<0)
+            throw new Error("Invalid dimensions.");
+
+        return {
+            area:checked(diagonal1*diagonal2/2),
+            perimeter:checked(4*side)
+        };
+    },
+
+    regularPolygon(sides,length) {
+        if (!Number.isInteger(sides)||sides<3||
+            !valid(length)||length<0)
+            throw new Error("Invalid polygon.");
+
+        const perimeter=sides*length;
+
+        return {
+            perimeter:checked(perimeter),
+            area:checked(
+                sides*length*length/
+                (4*Math.tan(Math.PI/sides))
+            )
+        };
+    },
+
+    // ---------- 3D SHAPES ----------
+
+    cube(side) {
+        if (!valid(side)||side<0)
+            throw new Error("Invalid side.");
+
+        return {
+            volume:checked(side**3),
+            surfaceArea:checked(6*side**2),
+            lateralSurfaceArea:checked(4*side**2),
+            diagonal:checked(side*Math.sqrt(3))
+        };
+    },
+
+    cuboid(length,width,height) {
+        if (![length,width,height].every(valid)||
+            [length,width,height].some(n=>n<0))
+            throw new Error("Invalid dimensions.");
+
+        return {
+            volume:checked(length*width*height),
+            surfaceArea:checked(
+                2*(length*width+width*height+height*length)
+            ),
+            lateralSurfaceArea:checked(
+                2*height*(length+width)
+            ),
+            diagonal:checked(Math.hypot(length,width,height))
+        };
+    },
+
+    sphere(radius) {
+        if (!valid(radius)||radius<0)
+            throw new Error("Invalid radius.");
+
+        return {
+            volume:checked(4*Math.PI*radius**3/3),
+            surfaceArea:checked(4*Math.PI*radius**2)
+        };
+    },
+
+    hemisphere(radius) {
+        if (!valid(radius)||radius<0)
+            throw new Error("Invalid radius.");
+
+        return {
+            volume:checked(2*Math.PI*radius**3/3),
+            curvedSurfaceArea:checked(2*Math.PI*radius**2),
+            totalSurfaceArea:checked(3*Math.PI*radius**2)
+        };
+    },
+
+    cylinder(radius,height) {
+        if (![radius,height].every(valid)||radius<0||height<0)
+            throw new Error("Invalid dimensions.");
+
+        return {
+            volume:checked(Math.PI*radius**2*height),
+            curvedSurfaceArea:checked(2*Math.PI*radius*height),
+            totalSurfaceArea:checked(
+                2*Math.PI*radius*(radius+height)
+            )
+        };
+    },
+
+    cone(radius,height,slantHeight) {
+        if (![radius,height].every(valid)||radius<0||height<0)
+            throw new Error("Invalid dimensions.");
+
+        const slant=slantHeight===undefined
+            ? Math.hypot(radius,height)
+            : slantHeight;
+
+        if (!valid(slant)||slant<0)
+            throw new Error("Invalid slant height.");
+
+        return {
+            volume:checked(Math.PI*radius**2*height/3),
+            curvedSurfaceArea:checked(Math.PI*radius*slant),
+            totalSurfaceArea:checked(
+                Math.PI*radius*(radius+slant)
+            ),
+            slantHeight:checked(slant)
+        };
+    },
+
+    // ---------- PYTHAGORAS ----------
+
+    pythagoras(a,b) {
+        if (![a,b].every(valid)||a<0||b<0)
+            throw new Error("Invalid sides.");
+
+        return {
+            hypotenuse:checked(Math.hypot(a,b))
+        };
+    },
+
+    missingLeg(hypotenuse,leg) {
+        if (![hypotenuse,leg].every(valid)||
+            hypotenuse<0||leg<0||leg>hypotenuse)
+            throw new Error("Invalid triangle sides.");
+
+        return {
+            missingSide:checked(
+                Math.sqrt(hypotenuse**2-leg**2)
+            )
+        };
+    },
+
+    // ---------- ANGLES ----------
+
+    degreesToRadians(degrees) {
+        if (!valid(degrees)) throw new Error("Invalid angle.");
+        return checked(degrees*Math.PI/180);
+    },
+
+    radiansToDegrees(radians) {
+        if (!valid(radians)) throw new Error("Invalid angle.");
+        return checked(radians*180/Math.PI);
+    }
+
+});
+
+// PART 3 END
+
+/* =====================================================
+   PART 4/5 — TRIGONOMETRY + CALCULUS + STATISTICS
+   ===================================================== */
+
+// ---------- ADVANCED TRIGONOMETRY ----------
+
+const Trigonometry = Object.freeze({
+
+    sin(degrees) {
+        if (!valid(degrees)) throw new Error("Invalid angle.");
+        return checked(Math.sin(toRadians(degrees)));
+    },
+
+    cos(degrees) {
+        if (!valid(degrees)) throw new Error("Invalid angle.");
+        return checked(Math.cos(toRadians(degrees)));
+    },
+
+    tan(degrees) {
+        if (!valid(degrees)) throw new Error("Invalid angle.");
+
+        if (Math.abs(Math.cos(toRadians(degrees))) < EPSILON) {
+            throw new Error("Tangent is undefined at this angle.");
+        }
+
+        return checked(Math.tan(toRadians(degrees)));
+    },
+
+    cot(degrees) {
+        const value = this.tan(degrees);
+        if (Math.abs(value) < EPSILON) {
+            throw new Error("Cotangent is undefined.");
+        }
+        return checked(1/value);
+    },
+
+    sec(degrees) {
+        const value = this.cos(degrees);
+        if (Math.abs(value) < EPSILON) {
+            throw new Error("Secant is undefined.");
+        }
+        return checked(1/value);
+    },
+
+    cosec(degrees) {
+        const value = this.sin(degrees);
+        if (Math.abs(value) < EPSILON) {
+            throw new Error("Cosecant is undefined.");
+        }
+        return checked(1/value);
+    },
+
+    asin(value) {
+        if (!valid(value)||value < -1||value > 1)
+            throw new Error("Input must be between -1 and 1.");
+        return checked(Math.asin(value)*180/Math.PI);
+    },
+
+    acos(value) {
+        if (!valid(value)||value < -1||value > 1)
+            throw new Error("Input must be between -1 and 1.");
+        return checked(Math.acos(value)*180/Math.PI);
+    },
+
+    atan(value) {
+        if (!valid(value)) throw new Error("Invalid value.");
+        return checked(Math.atan(value)*180/Math.PI);
+    },
+
+    // Sine rule: a/sin(A) = b/sin(B)
+    sineRule(sideA, angleA, angleB) {
+        if (![sideA,angleA,angleB].every(valid) ||
+            sideA<=0 || angleA<=0 || angleB<=0 ||
+            angleA+angleB>=180) {
+            throw new Error("Invalid triangle values.");
         }
 
         return {
-            exists: true,
-            answer: cleanNumber((left + right) / 2),
-            approximate: true
+            sideB:checked(
+                sideA*Math.sin(toRadians(angleB))/
+                Math.sin(toRadians(angleA))
+            )
         };
+    },
+
+    // Cosine rule: c² = a² + b² - 2ab cos(C)
+    cosineRule(a,b,angleC) {
+        if (![a,b,angleC].every(valid) ||
+            a<=0 || b<=0 || angleC<=0 || angleC>=180) {
+            throw new Error("Invalid triangle values.");
+        }
+
+        return {
+            sideC:checked(Math.sqrt(
+                a*a+b*b-2*a*b*Math.cos(toRadians(angleC))
+            ))
+        };
+    },
+
+    // Find third angle of a triangle.
+    thirdAngle(angleA,angleB) {
+        if (![angleA,angleB].every(valid) ||
+            angleA<=0 || angleB<=0 || angleA+angleB>=180) {
+            throw new Error("Invalid angles.");
+        }
+
+        return checked(180-angleA-angleB);
     }
 
-    // -------------------------------------------------------
-    // 26. UNIT CONVERSION
-    // -------------------------------------------------------
+});
 
-    const unitFactors = Object.freeze({
-        mm: 0.001,
-        cm: 0.01,
-        m: 1,
-        km: 1000,
-        inch: 0.0254,
-        ft: 0.3048,
-        mile: 1609.344,
+// ---------- CALCULUS ----------
 
-        mg: 0.000001,
-        g: 0.001,
-        kg: 1,
-        tonne: 1000,
+// Numerical differentiation using central difference.
+// f must be a function supplied by the program,
+// not text entered by the user.
+function derivative(f,x,h) {
+    h = h===undefined ? 0.0001 : h;
 
-        second: 1,
-        minute: 60,
-        hour: 3600,
-        day: 86400
+    if (typeof f!=="function" ||
+        !valid(x) || !valid(h) || h<=0) {
+        throw new Error("Invalid differentiation input.");
+    }
+
+    const left = f(x-h);
+    const right = f(x+h);
+
+    if (!valid(left)||!valid(right)) {
+        throw new Error("Function returned an invalid value.");
+    }
+
+    return checked((right-left)/(2*h));
+}
+
+// Numerical second derivative.
+function secondDerivative(f,x,h) {
+    h = h===undefined ? 0.001 : h;
+
+    if (typeof f!=="function" ||
+        !valid(x) || !valid(h) || h<=0) {
+        throw new Error("Invalid differentiation input.");
+    }
+
+    const center = f(x);
+    const left = f(x-h);
+    const right = f(x+h);
+
+    if (![center,left,right].every(valid)) {
+        throw new Error("Function returned an invalid value.");
+    }
+
+    return checked((right-2*center+left)/(h*h));
+}
+
+// Simpson's numerical integration.
+// n must be an even positive integer.
+function integrate(f,a,b,n) {
+    n = n===undefined ? 1000 : n;
+
+    if (typeof f!=="function" ||
+        !valid(a) || !valid(b) ||
+        !Number.isInteger(n) || n<2 || n>100000 ||
+        n%2!==0) {
+        throw new Error("Invalid integration input.");
+    }
+
+    const h = (b-a)/n;
+    let sum = f(a)+f(b);
+
+    if (!valid(sum)) throw new Error("Invalid function value.");
+
+    for (let i=1;i<n;i++) {
+        const value = f(a+i*h);
+
+        if (!valid(value)) {
+            throw new Error("Function returned an invalid value.");
+        }
+
+        sum += (i%2===0 ? 2 : 4)*value;
+    }
+
+    return checked(sum*h/3);
+}
+
+// Numerical limit using two nearby points.
+// This is an approximation, not a symbolic limit solver.
+function numericalLimit(f,x,h) {
+    h = h===undefined ? 0.000001 : h;
+
+    if (typeof f!=="function" ||
+        !valid(x) || !valid(h) || h<=0) {
+        throw new Error("Invalid limit input.");
+    }
+
+    const left = f(x-h);
+    const right = f(x+h);
+
+    if (!valid(left)||!valid(right)) {
+        throw new Error("Limit could not be approximated.");
+    }
+
+    return {
+        left:checked(left),
+        right:checked(right),
+        estimate:checked((left+right)/2),
+        note:"Numerical approximation only."
+    };
+}
+
+// ---------- STATISTICS ----------
+
+function validateData(data) {
+    if (!Array.isArray(data) ||
+        data.length===0 ||
+        data.length>100000 ||
+        !data.every(valid)) {
+        throw new Error("Enter a non-empty array of finite numbers.");
+    }
+
+    return data.slice();
+}
+
+function mean(data) {
+    data=validateData(data);
+
+    return checked(
+        data.reduce((sum,n)=>sum+n,0)/data.length
+    );
+}
+
+function median(data) {
+    data=validateData(data).sort((a,b)=>a-b);
+
+    const middle=Math.floor(data.length/2);
+
+    if (data.length%2===1) return checked(data[middle]);
+
+    return checked((data[middle-1]+data[middle])/2);
+}
+
+function mode(data) {
+    data=validateData(data);
+
+    const counts=new Map();
+
+    data.forEach(n=>{
+        counts.set(n,(counts.get(n)||0)+1);
     });
 
-    function convertUnit(value, from, to) {
-        from = String(from).toLowerCase();
-        to = String(to).toLowerCase();
+    const maximum=Math.max(...counts.values());
 
-        if (
-            !Object.prototype.hasOwnProperty.call(unitFactors, from) ||
-            !Object.prototype.hasOwnProperty.call(unitFactors, to)
-        ) {
-            throw new Error("Unsupported or incompatible unit");
-        }
+    if (maximum===1) return [];
 
-        return cleanNumber(
-            value * unitFactors[from] / unitFactors[to]
-        );
+    return Array.from(counts.entries())
+        .filter(item=>item[1]===maximum)
+        .map(item=>item[0])
+        .sort((a,b)=>a-b);
+}
+
+function variance(data,sample) {
+    data=validateData(data);
+
+    if (sample && data.length<2) {
+        throw new Error("Sample variance requires at least two values.");
     }
 
-    function convertTemperature(value, from, to) {
-        from = String(from).toLowerCase();
-        to = String(to).toLowerCase();
+    const average=mean(data);
 
+    const squaredDifferences=data.reduce(
+        (sum,n)=>sum+(n-average)**2,0
+    );
+
+    return checked(
+        squaredDifferences/(sample?data.length-1:data.length)
+    );
+}
+
+function standardDeviation(data,sample) {
+    return checked(Math.sqrt(variance(data,sample)));
+}
+
+function range(data) {
+    data=validateData(data);
+
+    return checked(Math.max(...data)-Math.min(...data));
+}
+
+function statistics(data) {
+    data=validateData(data);
+
+    return {
+        count:data.length,
+        mean:mean(data),
+        median:median(data),
+        mode:mode(data),
+        minimum:Math.min(...data),
+        maximum:Math.max(...data),
+        range:range(data),
+        populationVariance:variance(data,false),
+        populationStandardDeviation:standardDeviation(data,false)
+    };
+}
+
+// PART 4 END
+
+/* =====================================================
+   PART 5/5 — MATRICES + PROBABILITY + CONVERSION
+   + WORD PROBLEMS + FINAL API
+   ===================================================== */
+
+// ---------- MATRIX VALIDATION ----------
+
+function validateMatrix(matrix) {
+    if (!Array.isArray(matrix) ||
+        matrix.length===0 ||
+        matrix.length>50 ||
+        !matrix.every(row=>
+            Array.isArray(row) &&
+            row.length===matrix[0].length &&
+            row.length>0 &&
+            row.every(valid)
+        )) {
+        throw new Error("Invalid matrix.");
+    }
+
+    return matrix.map(row=>row.slice());
+}
+
+// ---------- MATRIX OPERATIONS ----------
+
+function matrixAdd(a,b) {
+    a=validateMatrix(a);
+    b=validateMatrix(b);
+
+    if (a.length!==b.length ||
+        a[0].length!==b[0].length) {
+        throw new Error("Matrix dimensions must match.");
+    }
+
+    return a.map((row,i)=>
+        row.map((value,j)=>checked(value+b[i][j]))
+    );
+}
+
+function matrixSubtract(a,b) {
+    a=validateMatrix(a);
+    b=validateMatrix(b);
+
+    if (a.length!==b.length ||
+        a[0].length!==b[0].length) {
+        throw new Error("Matrix dimensions must match.");
+    }
+
+    return a.map((row,i)=>
+        row.map((value,j)=>checked(value-b[i][j]))
+    );
+}
+
+function matrixMultiply(a,b) {
+    a=validateMatrix(a);
+    b=validateMatrix(b);
+
+    if (a[0].length!==b.length) {
+        throw new Error("Matrix dimensions are incompatible.");
+    }
+
+    const result=Array.from(
+        {length:a.length},
+        ()=>Array(b[0].length).fill(0)
+    );
+
+    for (let i=0;i<a.length;i++) {
+        for (let j=0;j<b[0].length;j++) {
+            for (let k=0;k<b.length;k++) {
+                result[i][j]+=a[i][k]*b[k][j];
+            }
+            result[i][j]=checked(result[i][j]);
+        }
+    }
+
+    return result;
+}
+
+function matrixTranspose(matrix) {
+    matrix=validateMatrix(matrix);
+
+    return matrix[0].map((_,j)=>
+        matrix.map(row=>row[j])
+    );
+}
+
+function matrixDeterminant(matrix) {
+    matrix=validateMatrix(matrix);
+
+    const n=matrix.length;
+
+    if (matrix[0].length!==n) {
+        throw new Error("Determinant requires a square matrix.");
+    }
+
+    const a=matrix.map(row=>row.slice());
+    let determinant=1;
+
+    for (let i=0;i<n;i++) {
+        let pivot=i;
+
+        for (let j=i+1;j<n;j++) {
+            if (Math.abs(a[j][i])>Math.abs(a[pivot][i])) {
+                pivot=j;
+            }
+        }
+
+        if (Math.abs(a[pivot][i])<EPSILON) return 0;
+
+        if (pivot!==i) {
+            [a[i],a[pivot]]=[a[pivot],a[i]];
+            determinant*=-1;
+        }
+
+        const value=a[i][i];
+        determinant*=value;
+
+        for (let j=i+1;j<n;j++) {
+            const factor=a[j][i]/value;
+
+            for (let k=i+1;k<n;k++) {
+                a[j][k]-=factor*a[i][k];
+            }
+        }
+    }
+
+    return checked(determinant);
+}
+
+function matrixInverse(matrix) {
+    matrix=validateMatrix(matrix);
+
+    const n=matrix.length;
+
+    if (matrix[0].length!==n) {
+        throw new Error("Inverse requires a square matrix.");
+    }
+
+    const a=matrix.map((row,i)=>
+        row.concat(
+            Array.from({length:n},(_,j)=>i===j?1:0)
+        )
+    );
+
+    for (let i=0;i<n;i++) {
+        let pivot=i;
+
+        for (let j=i+1;j<n;j++) {
+            if (Math.abs(a[j][i])>Math.abs(a[pivot][i])) {
+                pivot=j;
+            }
+        }
+
+        if (Math.abs(a[pivot][i])<EPSILON) {
+            throw new Error("Matrix is singular; inverse does not exist.");
+        }
+
+        [a[i],a[pivot]]=[a[pivot],a[i]];
+
+        const divisor=a[i][i];
+
+        for (let j=0;j<2*n;j++) {
+            a[i][j]/=divisor;
+        }
+
+        for (let k=0;k<n;k++) {
+            if (k===i) continue;
+
+            const factor=a[k][i];
+
+            for (let j=0;j<2*n;j++) {
+                a[k][j]-=factor*a[i][j];
+            }
+        }
+    }
+
+    return a.map(row=>
+        row.slice(n).map(checked)
+    );
+}
+
+// ---------- PROBABILITY ----------
+
+function probability(favourable,total) {
+    if (!valid(favourable)||!valid(total)||
+        total<=0||favourable<0||favourable>total) {
+        throw new Error("Invalid probability values.");
+    }
+
+    return {
+        fraction:fraction(
+            Math.round(favourable),
+            Math.round(total)
+        ),
+        decimal:checked(favourable/total),
+        percentage:checked(favourable/total*100)
+    };
+}
+
+function conditionalProbability(intersection,event) {
+    if (!valid(intersection)||!valid(event)||
+        event<=0||intersection<0||intersection>event) {
+        throw new Error("Invalid conditional probability values.");
+    }
+
+    return checked(intersection/event);
+}
+
+function complementProbability(p) {
+    if (!valid(p)||p<0||p>1) {
+        throw new Error("Probability must be between 0 and 1.");
+    }
+
+    return checked(1-p);
+}
+
+// ---------- UNIT CONVERSION ----------
+
+const UNIT_TABLE=Object.freeze({
+    length:{
+        m:1, meter:1, metre:1,
+        km:1000, kilometer:1000, kilometre:1000,
+        cm:0.01, mm:0.001,
+        mile:1609.344,
+        foot:0.3048, ft:0.3048,
+        inch:0.0254, in:0.0254
+    },
+    mass:{
+        kg:1, kilogram:1,
+        g:0.001, gram:0.001,
+        mg:0.000001,
+        tonne:1000, ton:1000,
+        pound:0.45359237, lb:0.45359237
+    },
+    time:{
+        second:1, seconds:1, sec:1, s:1,
+        minute:60, minutes:60, min:60,
+        hour:3600, hours:3600, hr:3600,
+        day:86400, days:86400
+    },
+    speed:{
+        "m/s":1,
+        "km/h":1/3.6,
+        "mph":0.44704
+    }
+});
+
+function convertUnit(value,from,to,category) {
+    if (!valid(value)) throw new Error("Invalid value.");
+
+    from=String(from).toLowerCase();
+    to=String(to).toLowerCase();
+    category=String(category).toLowerCase();
+
+    if (category==="temperature") {
         let celsius;
 
-        if (from === "c" || from === "celsius") {
-            celsius = value;
-        } else if (from === "f" || from === "fahrenheit") {
-            celsius = (value - 32) * 5 / 9;
-        } else if (from === "k" || from === "kelvin") {
-            celsius = value - 273.15;
-        } else {
-            throw new Error("Unknown temperature unit");
-        }
+        if (from==="c"||from==="celsius") celsius=value;
+        else if (from==="f"||from==="fahrenheit")
+            celsius=(value-32)*5/9;
+        else if (from==="k"||from==="kelvin")
+            celsius=value-273.15;
+        else throw new Error("Unknown temperature unit.");
 
-        if (to === "c" || to === "celsius") return cleanNumber(celsius);
-        if (to === "f" || to === "fahrenheit") {
-            return cleanNumber(celsius * 9 / 5 + 32);
-        }
-        if (to === "k" || to === "kelvin") {
-            return cleanNumber(celsius + 273.15);
-        }
+        if (to==="c"||to==="celsius") return checked(celsius);
+        if (to==="f"||to==="fahrenheit")
+            return checked(celsius*9/5+32);
+        if (to==="k"||to==="kelvin")
+            return checked(celsius+273.15);
 
-        throw new Error("Unknown temperature unit");
+        throw new Error("Unknown temperature unit.");
     }
 
-    // -------------------------------------------------------
-    // 27. WORD PROBLEM SOLVER
-    // -------------------------------------------------------
+    const table=UNIT_TABLE[category];
 
-    function resultObject(topic, answer, steps, extra) {
-        return Object.assign({
-            success: true,
-            topic: topic,
-            answer: answer,
-            steps: steps || []
-        }, extra || {});
+    if (!table||table[from]===undefined||table[to]===undefined) {
+        throw new Error("Unsupported unit conversion.");
     }
 
-    function solveWordProblem(input) {
-        const text = normalizeDigits(String(input))
-            .toLowerCase()
-            .replace(/,/g, "")
-            .trim();
+    return checked(value*table[from]/table[to]);
+}
 
-        let match;
+// ---------- AVERAGE ----------
 
-        // LCM
-        match = text.match(
-            /(?:lcm|least common multiple)\s+(?:of\s+)?(-?\d+)\s+(?:and|,)\s+(-?\d+)/i
-        );
+function average(numbers) {
+    return mean(numbers);
+}
 
-        if (match) {
-            const answer = solveLCM(Number(match[1]), Number(match[2]));
+// ---------- SPEED, DISTANCE, TIME ----------
 
-            return resultObject("LCM", answer, [
-                "Find the multiples of both numbers.",
-                "The smallest common multiple is " + answer + "."
-            ]);
+function speedDistanceTime(distance,time) {
+    if (![distance,time].every(valid)||distance<0||time<=0) {
+        throw new Error("Invalid distance or time.");
+    }
+
+    return {
+        speed:checked(distance/time)
+    };
+}
+
+function distanceFromSpeed(speed,time) {
+    if (![speed,time].every(valid)||speed<0||time<0) {
+        throw new Error("Invalid speed or time.");
+    }
+
+    return {
+        distance:checked(speed*time)
+    };
+}
+
+function timeFromDistance(distance,speed) {
+    if (![distance,speed].every(valid)||distance<0||speed<=0) {
+        throw new Error("Invalid distance or speed.");
+    }
+
+    return {
+        time:checked(distance/speed)
+    };
+}
+
+// Train speeds are km/h, lengths are metres.
+// Result is in seconds.
+
+function trainCrossPole(length,speed) {
+    if (![length,speed].every(valid)||length<0||speed<=0) {
+        throw new Error("Invalid train values.");
+    }
+
+    return {
+        time:checked(length/(speed*1000/3600))
+    };
+}
+
+function trainCrossPlatform(trainLength,platformLength,speed) {
+    if (![trainLength,platformLength,speed].every(valid)||
+        trainLength<0||platformLength<0||speed<=0) {
+        throw new Error("Invalid train values.");
+    }
+
+    return {
+        time:checked(
+            (trainLength+platformLength)/(speed*1000/3600)
+        )
+    };
+}
+
+function twoTrainsCross(length1,length2,speed1,speed2,opposite) {
+    if (![length1,length2,speed1,speed2].every(valid)||
+        length1<0||length2<0||speed1<0||speed2<0) {
+        throw new Error("Invalid train values.");
+    }
+
+    const relativeSpeed=opposite
+        ? speed1+speed2
+        : Math.abs(speed1-speed2);
+
+    if (relativeSpeed===0) {
+        throw new Error("Trains have no relative speed.");
+    }
+
+    return {
+        time:checked(
+            (length1+length2)/(relativeSpeed*1000/3600)
+        )
+    };
+}
+
+// ---------- WORK AND PIPES ----------
+// Times must use the same unit.
+
+function combinedWorkTime(...times) {
+    if (!times.length||!times.every(n=>valid(n)&&n>0)) {
+        throw new Error("Work times must be positive.");
+    }
+
+    const rate=times.reduce((sum,t)=>sum+1/t,0);
+
+    return checked(1/rate);
+}
+
+function pipeTime(fillTimes,emptyTimes) {
+    if (!Array.isArray(fillTimes)||!Array.isArray(emptyTimes)||
+        !fillTimes.every(n=>valid(n)&&n>0)||
+        !emptyTimes.every(n=>valid(n)&&n>0)) {
+        throw new Error("Invalid pipe times.");
+    }
+
+    const rate=
+        fillTimes.reduce((sum,t)=>sum+1/t,0)-
+        emptyTimes.reduce((sum,t)=>sum+1/t,0);
+
+    if (rate<=0) {
+        throw new Error("The tank cannot be filled with these pipes.");
+    }
+
+    return checked(1/rate);
+}
+
+// ---------- BASIC WORD PROBLEM SUPPORT ----------
+
+function solveWordProblem(input) {
+    const text=normalizeText(input);
+
+    let match;
+
+    // Percentage of a number
+    match=text.match(
+        /(-?\d+(?:\.\d+)?)\s*%\s*(?:of|er|এর|का)\s*(-?\d+(?:\.\d+)?)/
+    );
+
+    if (match) {
+        return {
+            success:true,
+            topic:"percentage",
+            answer:percentageOf(Number(match[1]),Number(match[2]))
+        };
+    }
+
+    // HCF / GCD
+    match=text.match(
+        /(?:hcf|gcd|গসাগু|महत्तम समापवर्तक)\s*[:=]?\s*(\d+)\s*(?:,|and|ও|और)\s*(\d+)/
+    );
+
+    if (match) {
+        return {
+            success:true,
+            topic:"hcf",
+            answer:gcd(Number(match[1]),Number(match[2]))
+        };
+    }
+
+    // LCM
+    match=text.match(
+        /(?:lcm|লসাগু|लघुत्तम समापवर्त्य)\s*[:=]?\s*(\d+)\s*(?:,|and|ও|और)\s*(\d+)/
+    );
+
+    if (match) {
+        return {
+            success:true,
+            topic:"lcm",
+            answer:lcm(Number(match[1]),Number(match[2]))
+        };
+    }
+
+    // Average
+    match=text.match(
+        /(?:average|mean|গড়|औसत)\s*(?:of|হলো|है)?\s*([\d.,\s]+)/
+    );
+
+    if (match) {
+        const values=match[1].split(/[,\s]+/)
+            .filter(Boolean).map(Number);
+
+        if (values.length && values.every(valid)) {
+            return {
+                success:true,
+                topic:"average",
+                answer:average(values)
+            };
         }
+    }
 
-        // HCF / GCD
-        match = text.match(
-            /(?:hcf|gcd|gcf|greatest common divisor|highest common factor)\s+(?:of\s+)?(-?\d+)\s+(?:and|,)\s+(-?\d+)/i
-        );
+    // Simple arithmetic expression
+    const expression=text
+        .replace(/^(?:calculate|solve|what is|কত|হিসাব করো)\s*/,"")
+        .trim();
 
-        if (match) {
-            const answer = solveHCF(Number(match[1]), Number(match[2]));
-
-            return resultObject("HCF", answer, [
-                "Apply the Euclidean algorithm.",
-                "The highest common factor is " + answer + "."
-            ]);
-        }
-
-        // Percentage of a number
-        match = text.match(
-            /(-?\d+(?:\.\d+)?)\s*%\s*(?:of|এর|का)\s*(-?\d+(?:\.\d+)?)/i
-        );
-
-        if (match) {
-            const p = Number(match[1]);
-            const n = Number(match[2]);
-            const answer = percentageOf(p, n);
-
-            return resultObject("Percentage", answer, [
-                p + "% means " + p + "/100.",
-                "(" + p + " / 100) × " + n + " = " + answer
-            ]);
-        }
-
-        // Speed = distance / time
-        match = text.match(
-            /(?:speed|গতি|चाल)\s*(?:is|=|হলো|है)?\s*(-?\d+(?:\.\d+)?)\s*(?:km\/h|kmph)\b/i
-        );
-
-        if (match) {
-            return resultObject(
-                "Speed",
-                Number(match[1]),
-                ["Speed value identified: " + match[1] + " km/h."],
-                { unit: "km/h" }
-            );
-        }
-
-        // Distance from speed and time
-        match = text.match(
-            /(?:distance|দূরত্ব|दूरी).*?(-?\d+(?:\.\d+)?)\s*(?:km\/h|kmph).*?(-?\d+(?:\.\d+)?)\s*(hours?|hrs?|ঘণ্টা|घंटे?)/i
-        );
-
-        if (match) {
-            const speed = Number(match[1]);
-            const time = Number(match[2]);
-            const answer = distanceFromSpeed(speed, time);
-
-            return resultObject("Distance", answer, [
-                "Distance = Speed × Time.",
-                speed + " × " + time + " = " + answer + " km."
-            ], { unit: "km" });
-        }
-
-        // Direct arithmetic expression
+    if (/^[\d.e+\-*/%^()!\s]+$/.test(expression)) {
         try {
-            const cleaned = normalizeText(text)
-                .replace(/^(calculate|compute|what is|solve)\s+/i, "")
-                .replace(/[?=]/g, "")
-                .trim();
-
-            if (
-                cleaned &&
-                /^[0-9eE+\-*/%^().,\s]+$/.test(cleaned)
-            ) {
-                const answer = parseExpression(tokenize(cleaned));
-
-                return resultObject("Arithmetic", cleanNumber(answer), [
-                    "Evaluate the expression using mathematical operator precedence.",
-                    "Answer = " + cleanNumber(answer)
-                ]);
-            }
+            return {
+                success:true,
+                topic:"arithmetic",
+                answer:parseExpression(expression)
+            };
         } catch (error) {
-            // Try the next solver or return unsupported.
+            return null;
         }
+    }
 
+    return null;
+}
+
+// ---------- MAIN SOLVER ----------
+
+function solve(input) {
+    if (typeof input!=="string"||!input.trim()||
+        input.length>MAX_LENGTH) {
         return null;
     }
 
-    // -------------------------------------------------------
-    // 28. MAIN SOLVER
-    // -------------------------------------------------------
+    const text=normalizeText(input);
 
-    function solve(input) {
-        try {
-            if (typeof input !== "string" || !input.trim()) {
-                return null;
-            }
+    try {
+        let match;
 
-            if (input.length > MAX_LENGTH) {
-                return null;
-            }
+        // Linear equation: solve 2x + 5 = 15
+        match=text.match(
+            /^solve\s+([+-]?(?:\d*\.?\d+|\d*)?)\s*x\s*([+-]\s*\d+(?:\.\d+)?)?\s*=\s*([+-]?\d+(?:\.\d+)?)$/
+        );
 
-            const text = normalizeText(input);
+        if (match) {
+            let a=match[1];
+            if (a===""||a==="+") a="1";
+            if (a==="-") a="-1";
 
-            // Linear equation: solve 2x + 5 = 15
-            let match = text.match(
-                /^solve\s+([+-]?\d*\.?\d*)\s*x\s*([+-]\s*\d+(?:\.\d+)?)?\s*=\s*([+-]?\d+(?:\.\d+)?)$/i
-            );
+            const b=match[2]
+                ? Number(match[2].replace(/\s/g,""))
+                : 0;
 
-            if (match) {
-                let a = match[1];
+            const result=solveLinear(Number(a),b,Number(match[3]));
 
-                if (a === "" || a === "+") a = 1;
-                if (a === "-") a = -1;
-
-                const b = match[2]
-                    ? Number(match[2].replace(/\s/g, ""))
-                    : 0;
-
-                const c = Number(match[3]);
-
-                const result = solveLinear(Number(a), b, c);
-
-                return resultObject(
-                    "Linear Algebra",
-                    result.answer,
-                    result.steps,
-                    { variable: "x" }
-                );
-            }
-
-            // Quadratic equation in form ax^2 + bx + c = 0
-            match = text.match(
-                /^solve\s+([+-]?\d*\.?\d*)\s*x\^2\s*([+-]\s*\d*\.?\d*)\s*x\s*([+-]\s*\d+(?:\.\d+)?)?\s*=\s*0$/i
-            );
-
-            if (match) {
-                let a = match[1];
-                let b = match[2];
-
-                if (a === "" || a === "+") a = 1;
-                if (a === "-") a = -1;
-                if (b === "" || b === "+") b = 1;
-                if (b === "-") b = -1;
-
-                const c = match[3] ? Number(match[3]) : 0;
-
-                const result = solveQuadratic(
-                    Number(a),
-                    Number(b),
-                    c
-                );
-
-                return resultObject(
-                    "Quadratic Algebra",
-                    result.answer,
-                    result.steps,
-                    { discriminant: result.discriminant }
-                );
-            }
-
-            // Word problems
-            const wordResult = solveWordProblem(input);
-
-            if (wordResult) return wordResult;
-
-            // Plain expression
-            const cleaned = text
-                .replace(/^(calculate|compute|what is)\s+/i, "")
-                .replace(/[?=]/g, "")
-                .trim();
-
-            if (
-                cleaned &&
-                /^[0-9eE+\-*/%^().,\s]+$/.test(cleaned)
-            ) {
-                const answer = parseExpression(tokenize(cleaned));
-
-                return resultObject("Arithmetic", cleanNumber(answer), [
-                    "Apply BODMAS/operator precedence.",
-                    "Answer = " + cleanNumber(answer)
-                ]);
-            }
-
-            return null;
-
-        } catch (error) {
             return {
-                success: false,
-                error: error.message || "Unable to solve this problem"
+                success:true,
+                topic:"linear equation",
+                answer:result.answer,
+                details:result
             };
         }
+
+        // Quadratic equation: solve 2x^2 + 3x + 1 = 0
+        match=text.match(
+            /^solve\s+([+-]?\d*\.?\d+)\s*x\s*\^?\s*2\s*([+-]\s*\d*\.?\d+)?\s*x?\s*([+-]\s*\d*\.?\d+)?\s*=\s*0$/
+        );
+
+        if (match) {
+            const a=Number(match[1]);
+
+            let b=match[2]
+                ? Number(match[2].replace(/\s/g,""))
+                : 0;
+
+            let c=match[3]
+                ? Number(match[3].replace(/\s/g,""))
+                : 0;
+
+            if (match[2] && /x$/.test(match[2].trim())) {
+                b=Number(match[2].replace(/x/g,"").replace(/\s/g,""));
+            }
+
+            const result=solveQuadratic(a,b,c);
+
+            return {
+                success:true,
+                topic:"quadratic equation",
+                answer:result.answer,
+                details:result
+            };
+        }
+
+        const wordResult=solveWordProblem(text);
+
+        if (wordResult) return wordResult;
+
+        // Direct calculation
+        const cleaned=text
+            .replace(/^(calculate|what is|solve)\s+/,"")
+            .trim();
+
+        if (cleaned && /^[\d.e+\-*/%^()!\s]+$/.test(cleaned)) {
+            return {
+                success:true,
+                topic:"arithmetic",
+                answer:parseExpression(cleaned)
+            };
+        }
+
+        return null;
+
+    } catch (error) {
+        console.error("Pownin solve error:",error);
+        return {
+            success:false,
+            error:error.message
+        };
+    }
+}
+
+// ---------- CALCULATOR COMPATIBILITY ----------
+
+function calculate(input) {
+    if (typeof input!=="string"||!input.trim()||
+        input.length>MAX_LENGTH) {
+        return null;
     }
 
-    // -------------------------------------------------------
-    // 29. SAFE PUBLIC API
-    // -------------------------------------------------------
+    const text=normalizeText(input)
+        .replace(/^(calculate|what is)\s+/,"")
+        .trim();
 
-    function calculate(input) {
-        try {
-            if (typeof input !== "string" || !input.trim()) {
-                return null;
-            }
-
-            if (input.length > MAX_LENGTH) return null;
-
-            const expression = normalizeText(input)
-                .replace(/^(calculate|compute|what is|solve)\s+/i, "")
-                .replace(/[?=]/g, "")
-                .trim();
-
-            if (!expression) return null;
-
-            if (!/^[0-9eE+\-*/%^().,!a-z,\s]+$/i.test(expression)) {
-                return null;
-            }
-
-            const tokens = tokenize(expression);
-
-            if (!tokens.length) return null;
-
-            return cleanNumber(parseExpression(tokens));
-
-        } catch (error) {
+    try {
+        if (!/^[\d.ea-z+\-*/%^(),!\s]+$/i.test(text)) {
             return null;
         }
+
+        return parseExpression(text);
+    } catch (error) {
+        return null;
     }
+}
 
-    window.PowninMath = Object.freeze({
+// ---------- FINAL PUBLIC API ----------
 
-        version: VERSION,
+const api = Object.freeze({
 
-        calculate: calculate,
+    version:VERSION,
 
-        solve: solve,
+    // Core
+    calculate:calculate,
+    solve:solve,
+    parseExpression:parseExpression,
+    normalizeDigits:normalizeDigits,
 
-        gcd: gcd,
-        lcm: lcm,
+    // Number theory
+    gcd:gcd,
+    hcf:hcf,
+    lcm:lcm,
+    lcmMany:lcmMany,
+    isPrime:isPrime,
+    primeFactors:primeFactors,
+    primeFactorization:primeFactorization,
+    divisors:divisors,
+    isPerfectSquare:isPerfectSquare,
+    isPerfectCube:isPerfectCube,
+    factorial:factorial,
 
-        fraction: fraction,
-        fractionOperation: fractionOperation,
+    // Algebra
+    solveLinear:solveLinear,
+    solveQuadratic:solveQuadratic,
+    solveSystem2x2:solveSystem2x2,
+    polynomialAdd:polynomialAdd,
+    polynomialMultiply:polynomialMultiply,
+    polynomialEvaluate:polynomialEvaluate,
+    factorPolynomial:factorPolynomial,
 
-        percentage: percentage,
-        percentageOf: percentageOf,
-        percentageChange: percentageChange,
+    // Fractions and arithmetic
+    fraction:fraction,
+    fractionAdd:fractionAdd,
+    fractionSubtract:fractionSubtract,
+    fractionMultiply:fractionMultiply,
+    fractionDivide:fractionDivide,
+    percentage:percentage,
+    percentageOf:percentageOf,
+    percentageChange:percentageChange,
+    simplifyRatio:simplifyRatio,
+    divideInRatio:divideInRatio,
+    profitLoss:profitLoss,
+    discount:discount,
+    simpleInterest:simpleInterest,
+    compoundInterest:compoundInterest,
+    permutation:permutation,
+    combination:combination,
 
-        simplifyRatio: simplifyRatio,
-        divideInRatio: divideInRatio,
+    // Geometry
+    geometry:Geometry,
 
-        profitLoss: profitLoss,
-        discount: discount,
+    // Trigonometry
+    trigonometry:Trigonometry,
 
-        simpleInterest: simpleInterest,
-        compoundInterest: compoundInterest,
+    // Calculus
+    derivative:derivative,
+    secondDerivative:secondDerivative,
+    integrate:integrate,
+    numericalLimit:numericalLimit,
 
-        speedDistanceTime: speedDistanceTime,
-        distanceFromSpeed: distanceFromSpeed,
-        timeFromDistance: timeFromDistance,
+    // Statistics
+    mean:mean,
+    average:average,
+    median:median,
+    mode:mode,
+    variance:variance,
+    standardDeviation:standardDeviation,
+    range:range,
+    statistics:statistics,
 
-        trainCrossPole: trainCrossPole,
-        trainCrossPlatform: trainCrossPlatform,
-        twoTrainsCross: twoTrainsCross,
+    // Matrices
+    matrixAdd:matrixAdd,
+    matrixSubtract:matrixSubtract,
+    matrixMultiply:matrixMultiply,
+    matrixTranspose:matrixTranspose,
+    matrixDeterminant:matrixDeterminant,
+    matrixInverse:matrixInverse,
 
-        combinedWorkTime: combinedWorkTime,
-        pipeTime: pipeTime,
+    // Probability
+    probability:probability,
+    conditionalProbability:conditionalProbability,
+    complementProbability:complementProbability,
 
-        average: average,
-        median: median,
-        mode: mode,
-        variance: variance,
-        standardDeviation: standardDeviation,
+    // Conversion
+    convertUnit:convertUnit,
 
-        permutation: permutation,
-        combination: combination,
+    // Speed, distance and work
+    speedDistanceTime:speedDistanceTime,
+    distanceFromSpeed:distanceFromSpeed,
+    timeFromDistance:timeFromDistance,
+    trainCrossPole:trainCrossPole,
+    trainCrossPlatform:trainCrossPlatform,
+    twoTrainsCross:twoTrainsCross,
+    combinedWorkTime:combinedWorkTime,
+    pipeTime:pipeTime,
 
-        solveLinear: solveLinear,
-        solveQuadratic: solveQuadratic,
+    // Word problems
+    solveWordProblem:solveWordProblem
+});
 
-        geometry: geometry,
+window.PowninMath=api;
 
-        probability: probability,
-        conditionalProbability: conditionalProbability,
-
-        determinant: determinant,
-
-        derivative: derivative,
-        numericalIntegral: numericalIntegral,
-        numericalLimit: numericalLimit,
-
-        convertUnit: convertUnit,
-        convertTemperature: convertTemperature
-
-    });
-
-    console.log("POWNIN ADVANCED MATH ENGINE v" + VERSION + " LOADED");
+console.log("POWNIN ADVANCED MATH ENGINE v"+VERSION+" LOADED");
 
 })();
+
+
+
+ 
