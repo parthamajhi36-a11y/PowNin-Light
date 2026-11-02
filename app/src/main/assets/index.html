@@ -82,20 +82,22 @@
         <section class="mode-panel">
 
             <div class="section-title">
+
                 <div>
                     <span class="eyebrow">INTELLIGENCE</span>
                     <h2>AI MODE</h2>
                 </div>
 
                 <span id="modeLabel" class="mode-label">
-                    OFFLINE
+                    HYBRID
                 </span>
+
             </div>
 
             <div class="mode-grid">
 
                 <button type="button"
-                        class="mode-btn active"
+                        class="mode-btn"
                         id="offlineModeBtn"
                         data-mode="offline">
 
@@ -103,6 +105,7 @@
                     <span>OFFLINE</span>
 
                 </button>
+
 
                 <button type="button"
                         class="mode-btn"
@@ -114,8 +117,9 @@
 
                 </button>
 
+
                 <button type="button"
-                        class="mode-btn"
+                        class="mode-btn active"
                         id="hybridModeBtn"
                         data-mode="hybrid">
 
@@ -133,12 +137,14 @@
         <section class="voice-panel">
 
             <div class="section-title">
+
                 <div>
                     <span class="eyebrow">AUDIO SYSTEM</span>
                     <h2>VOICE CENTER</h2>
                 </div>
 
                 <span class="voice-status">READY</span>
+
             </div>
 
             <div class="waveform" aria-hidden="true">
@@ -176,13 +182,9 @@
 
             </div>
 
-            <div class="chat" id="chat">
+            <!-- Messages are added by app.js -->
+            <div class="chat" id="chat"></div>
 
-                <div class="message bot">
-                    Hello! I am POWNIN. How can I help you?
-                </div>
-
-            </div>
 
             <div class="input-area">
 
@@ -202,20 +204,26 @@
 
                 </div>
 
+
                 <div class="voice-actions">
 
                     <button type="button"
                             id="voiceBtn"
                             class="voice-action primary-voice">
+
                         <span>🎙</span>
                         START LISTENING
+
                     </button>
+
 
                     <button type="button"
                             id="stopBtn"
                             class="voice-action stop-voice">
+
                         <span>■</span>
                         STOP VOICE
+
                     </button>
 
                 </div>
