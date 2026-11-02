@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.provider.MediaStore
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
@@ -32,11 +33,14 @@ class MainActivity : ComponentActivity() {
     private var pendingText: String? = null
     private var pendingLanguage = "en-IN"
 
+    // ==========================================
+    // MICROPHONE PERMISSION
+    // ==========================================
+
     private val audioPermissionLauncher =
         registerForActivityResult(
             ActivityResultContracts.RequestPermission()
         ) { granted ->
-
             if (granted) {
                 launchRecognition(pendingLanguage)
             } else {
@@ -46,6 +50,10 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
+
+    // ==========================================
+    // ACTIVITY CREATE
+    // ==========================================
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -69,6 +77,7 @@ class MainActivity : ComponentActivity() {
                         allowUniversalAccessFromFileURLs = false
                         javaScriptCanOpenWindowsAutomatically = false
                         setSupportMultipleWindows(false)
+
                         mixedContentMode =
                             WebSettings.MIXED_CONTENT_NEVER_ALLOW
                     }
@@ -91,7 +100,9 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // ==========================================
     // TEXT TO SPEECH
+    // ==========================================
 
     private fun setupTextToSpeech() {
 
@@ -109,6 +120,8 @@ class MainActivity : ComponentActivity() {
                 notifyJavascript("onNativeTtsReady")
 
             } else {
+
+                ttsReady = false
 
                 notifyJavascript(
                     "onNativeSpeechError",
@@ -133,7 +146,8 @@ class MainActivity : ComponentActivity() {
 
         val result = textToSpeech?.setLanguage(locale)
 
-        if (result == TextToSpeech.LANG_MISSING_DATA ||
+        if (
+            result == TextToSpeech.LANG_MISSING_DATA ||
             result == TextToSpeech.LANG_NOT_SUPPORTED
         ) {
             notifyJavascript(
@@ -154,7 +168,9 @@ class MainActivity : ComponentActivity() {
         )
     }
 
+    // ==========================================
     // SPEECH RECOGNITION
+    // ==========================================
 
     private fun setupSpeechRecognizer() {
 
@@ -196,11 +212,14 @@ class MainActivity : ComponentActivity() {
                     val spokenText = matches?.firstOrNull()
 
                     if (!spokenText.isNullOrBlank()) {
+
                         notifyJavascript(
                             "onNativeSpeechResult",
                             spokenText
                         )
+
                     } else {
+
                         notifyJavascript(
                             "onNativeSpeechError",
                             "No speech detected"
@@ -234,7 +253,8 @@ class MainActivity : ComponentActivity() {
                 return@runOnUiThread
             }
 
-            if (checkSelfPermission(
+            if (
+                checkSelfPermission(
                     Manifest.permission.RECORD_AUDIO
                 ) != PackageManager.PERMISSION_GRANTED
             ) {
@@ -300,7 +320,6 @@ class MainActivity : ComponentActivity() {
     private fun stopNativeListening() {
 
         runOnUiThread {
-
             try {
                 speechRecognizer?.cancel()
             } catch (_: Exception) {
@@ -308,7 +327,99 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // ==========================================
+    // SMART APP CONTROL v1.0
+    // ==========================================
+
+    private fun launchAppFromCommand(
+        appName: String
+    ): String {
+
+        val key = appName.trim().lowercase(Locale.ROOT)
+
+        val intent: Intent? = when (key) {
+
+            "youtube" ->
+                packageManager.getLaunchIntentForPackage(
+                    "com.google.android.youtube"
+                )
+
+            "chrome" ->
+                packageManager.getLaunchIntentForPackage(
+                    "com.android.chrome"
+                )
+
+            "whatsapp" ->
+                packageManager.getLaunchIntentForPackage(
+                    "com.whatsapp"
+                )
+
+            "maps" ->
+                packageManager.getLaunchIntentForPackage(
+                    "com.google.android.apps.maps"
+                )
+
+            "settings" ->
+                Intent(
+                    android.provider.Settings.ACTION_SETTINGS
+                )
+
+            "phone" ->
+                Intent(Intent.ACTION_DIAL)
+
+            "camera" ->
+                Intent(
+                    MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA
+                )
+
+            "calculator" ->
+                Intent(Intent.ACTION_MAIN).apply {
+                    addCategory(
+                        Intent.CATEGORY_APP_CALCULATOR
+                    )
+                }
+
+            "files" ->
+                Intent(Intent.ACTION_MAIN).apply {
+                    addCategory(
+                        Intent.CATEGORY_APP_FILES
+                    )
+                }
+
+            else -> null
+        }
+
+        if (intent == null) {
+            return "APP_NOT_FOUND"
+        }
+
+        return try {
+
+            intent.addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK
+            )
+
+            runOnUiThread {
+                try {
+                    startActivity(intent)
+                } catch (error: Exception) {
+                    notifyJavascript(
+                        "onNativeAppError",
+                        error.message ?: "Unable to open app"
+                    )
+                }
+            }
+
+            "OPENING"
+
+        } catch (error: Exception) {
+            "ERROR"
+        }
+    }
+
+    // ==========================================
     // JAVASCRIPT CALLBACK
+    // ==========================================
 
     private fun notifyJavascript(
         function: String,
@@ -320,8 +431,11 @@ class MainActivity : ComponentActivity() {
         runOnUiThread {
 
             val script = if (message == null) {
+
                 "window.$function && window.$function();"
+
             } else {
+
                 val safeMessage =
                     org.json.JSONObject.quote(message)
 
@@ -332,12 +446,19 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // PART 1 END
+
+        // ==========================================
     // JAVASCRIPT BRIDGE
+    // ==========================================
 
     inner class PowninBridge {
 
         @JavascriptInterface
-        fun speak(text: String?, language: String?) {
+        fun speak(
+            text: String?,
+            language: String?
+        ) {
 
             if (text.isNullOrBlank()) return
 
@@ -378,13 +499,31 @@ class MainActivity : ComponentActivity() {
                     this@MainActivity
                 )
         }
+
+        // SMART APP CONTROL
+
+        @JavascriptInterface
+        fun openApp(appName: String?): String {
+
+            if (appName.isNullOrBlank()) {
+                return "INVALID_APP"
+            }
+
+            return launchAppFromCommand(appName)
+        }
     }
+
+    // ==========================================
+    // ACTIVITY DESTROY
+    // ==========================================
 
     override fun onDestroy() {
 
         if (::webView.isInitialized) {
             webView.stopLoading()
-            webView.removeJavascriptInterface("PowninAndroid")
+            webView.removeJavascriptInterface(
+                "PowninAndroid"
+            )
             webView.loadUrl("about:blank")
             webView.destroy()
         }
@@ -396,6 +535,10 @@ class MainActivity : ComponentActivity() {
         textToSpeech?.shutdown()
         textToSpeech = null
 
+        ttsReady = false
+
         super.onDestroy()
     }
 }
+
+    
