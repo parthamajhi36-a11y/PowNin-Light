@@ -1,623 +1,1078 @@
-/* =========================================================
-   POWNIN SMART BRAIN v4.0
-   PART 1/3 — CORE + LANGUAGE + MEMORY + OFFLINE BRAIN
-   Bengali | Hindi | English | Banglish
-   ========================================================= */
+// ============================================================
+// POWNIN SMART BRAIN v5.3
+// PART 1/8 — CORE CONFIGURATION, LANGUAGE, HISTORY & UI
+// ============================================================
 
 "use strict";
 
-// ==========================================
-// 1. CONFIGURATION
-// ==========================================
+// ------------------------------------------------------------
+// 1. CORE CONFIGURATION
+// ------------------------------------------------------------
 
-const POWNIN_VERSION = "4.0";
-const MAX_HISTORY = 40;
-const MAX_COMMAND_LENGTH = 2000;
-const MEMORY_KEY = "POWNIN_V4_MEMORY";
-const SETTINGS_KEY = "POWNIN_V4_SETTINGS";
+const POWNIN_VERSION = "5.3";
+const MAX_HISTORY_MESSAGES = 10;
+const MAX_COMMAND_LENGTH = 1000;
+const MAX_NOTE_LENGTH = 500;
 
-let conversationHistory = [];
-let speechEnabled = true;
 let currentMode = "hybrid";
-let selectedLanguage = "auto";
-let lastDetectedLanguage = "en";
-let isProcessing = false;
+let selectedLanguage = "en-IN";
+let speechEnabled = true;
 let isListening = false;
-let isSpeaking = false;
+let isProcessing = false;
+let powninCommandToken = 0;
+let activePowninAbortController = null;
+let lastReply = "";
+let lastUserCommand = "";
+let history = [];
 
-// ==========================================
-// 2. HTML ELEMENTS
-// ==========================================
+const POWNIN_NOTES_KEY = "pownin_extra_notes_v1";
 
-const chat = document.getElementById("chat");
-const input = document.getElementById("commandInput");
-const sendBtn = document.getElementById("sendBtn");
-const voiceBtn = document.getElementById("voiceBtn");
-const stopBtn = document.getElementById("stopBtn");
-const statusText = document.getElementById("status");
+// ------------------------------------------------------------
+// 2. UI ELEMENT REFERENCES
+// ------------------------------------------------------------
 
-const mascotFrame = document.getElementById("mascotFrame");
-const assistantState = document.getElementById("assistantState");
-const modeLabel = document.getElementById("modeLabel");
-
-const modeButtons = {
-    offline: document.getElementById("offlineModeBtn"),
-    online: document.getElementById("onlineModeBtn"),
-    hybrid: document.getElementById("hybridModeBtn")
-};
-
-// ==========================================
-// 3. STATUS SYSTEM
-// ==========================================
-
-function setStatus(message) {
-    if (statusText) {
-        statusText.textContent = String(message || "");
-    }
+function getElement(id) {
+    return document.getElementById(id);
 }
 
-function setAssistantState(state) {
-    const value = String(state || "SYSTEM READY");
+const chat = getElement("chat");
+const commandInput = getElement("command");
+const sendBtn = getElement("sendBtn");
+const modeSelect = getElement("mode");
+const languageSelect = getElement("language");
+const statusElement = getElement("status");
+const statusDot = getElement("statusDot");
+const micBtn = getElement("micBtn");
+const speakBtn = getElement("speakBtn");
+const stopSpeakBtn = getElement("stopSpeakBtn");
+const clearChatBtn = getElement("clearChatBtn");
+const commandForm = getElement("commandForm");
+const settingsBtn = getElement("settingsBtn");
+const settingsPanel = getElement("settingsPanel");
+const closeSettingsBtn = getElement("closeSettingsBtn");
+const endpointInput = getElement("endpoint");
+const modelInput = getElement("model");
+const apiKeyInput = getElement("apiKey");
+const clearKeyBtn = getElement("clearKeyBtn");
+const characterCount = getElement("characterCount");
 
-    if (assistantState) {
-        assistantState.textContent = value;
-    }
+const clockElement = getElement("clock");
+const networkLabel = getElement("networkLabel");
+const voiceLabel = getElement("voiceLabel");
+const brainModeLabel = getElement("brainModeLabel");
 
-    if (mascotFrame) {
-        mascotFrame.classList.remove(
-            "listening",
-            "thinking",
-            "speaking"
-        );
+// ------------------------------------------------------------
+// 3. TEXT NORMALIZATION
+// ------------------------------------------------------------
 
-        if (value === "LISTENING") {
-            mascotFrame.classList.add("listening");
-        } else if (value === "THINKING") {
-            mascotFrame.classList.add("thinking");
-        } else if (value === "SPEAKING") {
-            mascotFrame.classList.add("speaking");
-        }
-    }
-}
-
-function setReadyState() {
-    setStatus("READY");
-    setAssistantState("SYSTEM READY");
-}
-
-// ==========================================
-// 4. LANGUAGE SYSTEM
-// ==========================================
-
-function normalizeText(text) {
-    return String(text || "")
+function normalizePowninText(value) {
+    return String(value == null ? "" : value)
+        .normalize("NFKC")
+        .replace(/[’‘]/g, "'")
+        .replace(/[“”]/g, '"')
+        .replace(/\s+/g, " ")
         .trim()
-        .toLowerCase()
-        .replace(/\s+/g, " ");
+        .toLowerCase();
 }
 
-function detectLanguage(text) {
+function normalizePowninDigits(text) {
+    const bengaliDigits = "০১২৩৪৫৬৭৮৯";
+    const hindiDigits = "०१२३४५६७८९";
+
+    return String(text == null ? "" : text)
+        .replace(/[০-৯]/g, function (digit) {
+            return String(bengaliDigits.indexOf(digit));
+        })
+        .replace(/[०-९]/g, function (digit) {
+            return String(hindiDigits.indexOf(digit));
+        });
+}
+
+// ------------------------------------------------------------
+// 4. LANGUAGE DETECTION
+// Supports Bengali, Hindi, English and common Banglish.
+// ------------------------------------------------------------
+
+function detectPowninLanguage(text) {
     const value = String(text || "");
 
-    // Bengali script detection
     if (/[\u0980-\u09FF]/.test(value)) {
-        return "bn";
+        return "bn-IN";
     }
 
-    // Hindi / Devanagari script detection
     if (/[\u0900-\u097F]/.test(value)) {
-        return "hi";
+        return "hi-IN";
     }
 
-    // Banglish detection
-    const banglaWords =
-        /\b(tomar|amar|amake|tumi|kemon|acho|achho|nam|name|naam|ki|kothay|bolo|bolbe|korbo|koro|kholo|bondho|shomoy|somoy|dhonnobad|bhalo|valo|ami|hobe|chai)\b/i;
+    const normalized = normalizePowninText(value);
 
-    // Roman Hindi detection
+    // Identity questions written in Banglish.
+    const bengaliIdentity =
+        /\b(tomar|tomar nam|tomar naam|tomar name|amar nam|amar naam|amar name|tumi ke|tumi ki)\b/;
+
+    if (bengaliIdentity.test(normalized)) {
+        return "bn-IN";
+    }
+
+    const bengaliWords =
+        /\b(amar|amake|amar naam|amar nam|tomar|tomake|tomar naam|tomar nam|name|nam|naam|tumi|tumi ki|kemon|bhalo|bolo|bolun|koro|korbe|ki|kothay|bangla|banglish|shomoy|somoy|tarikh|dhonnobad|pownin)\b/;
+
     const hindiWords =
-        /\b(mera|meri|mujhe|tumhara|aapka|kaise|kya|hai|haan|nahi|samay|shukriya)\b/i;
+        /\b(mera|mujhe|tum|aap|kaise|kya|batao|bolo|samay|tarikh|dhanyavad|namaste|hindi)\b/;
 
-    if (banglaWords.test(value)) {
-        return "bn";
+    if (bengaliWords.test(normalized)) {
+        return "bn-IN";
     }
 
-    if (hindiWords.test(value)) {
-        return "hi";
+    if (hindiWords.test(normalized)) {
+        return "hi-IN";
     }
 
-    return "en";
+    return normalizePowninLanguage(selectedLanguage);
 }
 
-function getLanguageCode(language) {
-    if (language === "bn") return "bn-IN";
-    if (language === "hi") return "hi-IN";
+function normalizePowninLanguage(language) {
+    const value = String(language || "").toLowerCase();
+
+    if (value.startsWith("bn")) {
+        return "bn-IN";
+    }
+
+    if (value.startsWith("hi")) {
+        return "hi-IN";
+    }
 
     return "en-IN";
 }
 
-function getActiveLanguage(text) {
-    if (selectedLanguage !== "auto") {
-        return selectedLanguage;
-    }
-
-    return detectLanguage(text);
+function getCurrentLanguage() {
+    return normalizePowninLanguage(selectedLanguage);
 }
 
-function getLanguage(text) {
-    return getActiveLanguage(text);
+function getReplyLanguage(text) {
+    return normalizePowninLanguage(detectPowninLanguage(text));
 }
 
-function getReply(language, english, bengali, hindi) {
-    if (language === "bn") {
-        return bengali;
-    }
+// ------------------------------------------------------------
+// 5. CHAT HISTORY
+// ------------------------------------------------------------
 
-    if (language === "hi") {
-        return hindi;
-    }
+function addHistory(role, content) {
+    const message = {
+        role: role === "user" ? "user" : "assistant",
+        content: String(content || "").slice(0, MAX_COMMAND_LENGTH)
+    };
 
-    return english;
+    history.push(message);
+
+    if (history.length > MAX_HISTORY_MESSAGES) {
+        history = history.slice(-MAX_HISTORY_MESSAGES);
+    }
 }
 
-// ==========================================
-// 5. CHAT DISPLAY
-// ==========================================
+function getPowninHistory() {
+    return history.map(function (item) {
+        return {
+            role: item.role,
+            content: item.content
+        };
+    });
+}
 
-function addMessage(message, type) {
-    if (!chat) return;
+function clearPowninHistory() {
+    history = [];
+}
 
-    const item = document.createElement("div");
-    item.className = "message " + type;
-    item.textContent = String(message || "");
+// ------------------------------------------------------------
+// 6. STATUS AND MODE UI
+// ------------------------------------------------------------
 
-    chat.appendChild(item);
+function setStatus(message, isError) {
+    if (statusElement) {
+        statusElement.textContent = String(message || "");
+    }
+
+    if (statusDot) {
+        statusDot.classList.toggle("error", Boolean(isError));
+        statusDot.classList.toggle("active", !isError);
+    }
+}
+
+function setNetworkStatus(message) {
+    if (networkLabel) {
+        networkLabel.textContent = String(message || "");
+    }
+}
+
+function setVoiceStatus(message) {
+    if (voiceLabel) {
+        voiceLabel.textContent = String(message || "");
+    }
+}
+
+function updatePowninModeLabel() {
+    if (brainModeLabel) {
+        brainModeLabel.textContent =
+            String(currentMode || "hybrid").toUpperCase() + " MODE";
+    }
+}
+
+function setPowninMode(mode) {
+    const allowedModes = ["offline", "online", "hybrid"];
+    const nextMode = String(mode || "").toLowerCase();
+
+    if (!allowedModes.includes(nextMode)) {
+        return false;
+    }
+
+    currentMode = nextMode;
+
+    if (modeSelect) {
+        modeSelect.value = currentMode;
+    }
+
+    updatePowninModeLabel();
+
+    if (currentMode === "offline") {
+        setNetworkStatus("OFFLINE");
+    } else if (currentMode === "online") {
+        setNetworkStatus("ONLINE AI");
+    } else {
+        setNetworkStatus("HYBRID");
+    }
+
+    return true;
+}
+
+// ------------------------------------------------------------
+// 7. ERROR MESSAGE HELPER
+// ------------------------------------------------------------
+
+function getPowninErrorMessage(error) {
+    if (error && typeof error.message === "string") {
+        return error.message;
+    }
+
+    return "An unexpected error occurred.";
+}
+
+// ------------------------------------------------------------
+// END OF PART 1/8
+// ============================================================
+
+// ============================================================
+// POWNIN SMART BRAIN v5.3
+// PART 2/8 — CHAT UI, CLOCK, LOCALIZED REPLIES & NOTES
+// ============================================================
+
+// ------------------------------------------------------------
+// 1. SAFE CHAT MESSAGE DISPLAY
+// ------------------------------------------------------------
+
+function addChatMessage(role, message) {
+    if (!chat) {
+        console.warn("Pownin: Chat element not found.");
+        return null;
+    }
+
+    const content = String(message == null ? "" : message).trim();
+
+    if (!content) {
+        return null;
+    }
+
+    const messageElement = document.createElement("div");
+
+    messageElement.className =
+        role === "user" ? "user-message" : "assistant-message";
+
+    const textElement = document.createElement("div");
+    textElement.className = "message-text";
+
+    // textContent prevents HTML/script injection.
+    textElement.textContent = content;
+
+    messageElement.appendChild(textElement);
+    chat.appendChild(messageElement);
+
     chat.scrollTop = chat.scrollHeight;
+
+    return messageElement;
 }
 
 function showUserMessage(message) {
-    addMessage(message, "user");
+    const content = String(message || "").trim();
+
+    if (!content) {
+        return;
+    }
+
+    addChatMessage("user", content);
+    addHistory("user", content);
 }
 
-function showBotMessage(message) {
-    addMessage(message, "bot");
+function showReply(message, options) {
+    const content = String(message == null ? "" : message).trim();
+
+    if (!content) {
+        return;
+    }
+
+    addChatMessage("assistant", content);
+    addHistory("assistant", content);
+
+    lastReply = content;
+
+    const settings = options || {};
+
+    if (settings.speak === true) {
+        speak(content);
+    }
 }
 
-// ==========================================
-// 6. SMART MEMORY
-// ==========================================
+// ------------------------------------------------------------
+// 2. CLEAR CHAT
+// ------------------------------------------------------------
 
-function loadSettings() {
+function clearChat() {
+    if (chat) {
+        chat.replaceChildren();
+    }
+
+    clearPowninHistory();
+
+    lastReply = "";
+    lastUserCommand = "";
+
+    setStatus("Chat cleared.");
+
+    if (commandInput) {
+        commandInput.value = "";
+    }
+
+    if (characterCount) {
+        characterCount.textContent = "0";
+    }
+}
+
+// ------------------------------------------------------------
+// 3. DEVICE DATE AND TIME
+// ------------------------------------------------------------
+
+function getPowninTime() {
     try {
-        const saved = localStorage.getItem(SETTINGS_KEY);
-
-        if (!saved) return;
-
-        const settings = JSON.parse(saved);
-
-        if (
-            settings.language === "auto" ||
-            settings.language === "bn" ||
-            settings.language === "hi" ||
-            settings.language === "en"
-        ) {
-            selectedLanguage = settings.language;
-        }
-
-        if (
-            settings.mode === "offline" ||
-            settings.mode === "online" ||
-            settings.mode === "hybrid"
-        ) {
-            currentMode = settings.mode;
-        }
-
-    } catch (error) {
-        console.warn("Settings load error:", error);
-    }
-}
-
-function saveSettings() {
-    try {
-        localStorage.setItem(
-            SETTINGS_KEY,
-            JSON.stringify({
-                language: selectedLanguage,
-                mode: currentMode
-            })
-        );
-    } catch (error) {
-        console.warn("Settings save error:", error);
-    }
-}
-
-function loadConversationMemory() {
-    try {
-        const saved = localStorage.getItem(MEMORY_KEY);
-
-        if (!saved) return;
-
-        const parsed = JSON.parse(saved);
-
-        if (Array.isArray(parsed)) {
-            conversationHistory = parsed
-                .filter(item =>
-                    item &&
-                    typeof item.content === "string" &&
-                    (item.role === "user" ||
-                     item.role === "assistant")
-                )
-                .slice(-MAX_HISTORY);
-        }
-
-    } catch (error) {
-        console.warn("Memory loading error:", error);
-        conversationHistory = [];
-    }
-}
-
-function saveConversationMemory() {
-    try {
-        localStorage.setItem(
-            MEMORY_KEY,
-            JSON.stringify(
-                conversationHistory.slice(-MAX_HISTORY)
-            )
-        );
-    } catch (error) {
-        console.warn("Memory saving error:", error);
-    }
-}
-
-function saveConversation(role, content) {
-    conversationHistory.push({
-        role: role,
-        content: String(content),
-        time: Date.now()
-    });
-
-    if (conversationHistory.length > MAX_HISTORY) {
-        conversationHistory =
-            conversationHistory.slice(-MAX_HISTORY);
-    }
-
-    saveConversationMemory();
-}
-
-function getRecentContext() {
-    return conversationHistory.slice(-10);
-}
-
-function clearConversation() {
-    conversationHistory = [];
-
-    try {
-        localStorage.removeItem(MEMORY_KEY);
-    } catch (error) {
-        console.warn("Memory clear error:", error);
-    }
-
-    if (chat) chat.textContent = "";
-
-    showBotMessage(
-        getReply(
-            lastDetectedLanguage,
-            "Chat history cleared.",
-            "চ্যাট হিস্ট্রি মুছে দেওয়া হয়েছে।",
-            "चैट हिस्ट्री साफ कर दी गई है।"
-        )
-    );
-
-    setReadyState();
-}
-
-// ==========================================
-// 7. OFFLINE GREETINGS
-// ==========================================
-
-function handleGreeting(language) {
-    return getReply(
-        language,
-        "Hello! I am PowNin. How can I help you?",
-        "হ্যালো! আমি PowNin। কীভাবে সাহায্য করতে পারি?",
-        "नमस्ते! मैं PowNin हूँ। आपकी कैसे मदद कर सकता हूँ?"
-    );
-}
-
-// ==========================================
-// 8. IDENTITY
-// ==========================================
-
-function handleIdentity(language) {
-    return getReply(
-        language,
-        "I am PowNin, your Android AI assistant.",
-        "আমি PowNin, তোমার Android AI Assistant।",
-        "मैं PowNin हूँ, आपका Android AI Assistant।"
-    );
-}
-
-// ==========================================
-// 9. DATE AND TIME
-// ==========================================
-
-function handleTime(language) {
-    const time = new Date().toLocaleTimeString(
-        getLanguageCode(language),
-        {
+        return new Intl.DateTimeFormat("en-IN", {
             hour: "numeric",
-            minute: "2-digit"
-        }
-    );
-
-    return getReply(
-        language,
-        "The current time is " + time,
-        "এখন সময় " + time,
-        "अभी समय " + time + " है।"
-    );
+            minute: "2-digit",
+            hour12: true
+        }).format(new Date());
+    } catch (error) {
+        return new Date().toLocaleTimeString();
+    }
 }
 
-function handleDate(language) {
-    const date = new Date().toLocaleDateString(
-        getLanguageCode(language),
-        {
+function getPowninDate() {
+    try {
+        return new Intl.DateTimeFormat("en-IN", {
             day: "numeric",
             month: "long",
             year: "numeric"
+        }).format(new Date());
+    } catch (error) {
+        return new Date().toLocaleDateString();
+    }
+}
+
+function updatePowninClock() {
+    if (!clockElement) {
+        return;
+    }
+
+    const now = new Date();
+
+    clockElement.textContent = now.toLocaleTimeString("en-IN", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true
+    });
+}
+
+// ------------------------------------------------------------
+// 4. LOCALIZED RESPONSE TEXT
+// ------------------------------------------------------------
+
+const POWNIN_TEXT = {
+    "en-IN": {
+        greeting: "Hello! I am Pownin. How can I help you?",
+        identity: "I am Pownin, your smart voice assistant.",
+        help: "I can help with calculations, time, date, notes, supported apps and general questions.",
+        thanks: "You're welcome!",
+        time: "The current device time is ",
+        date: "Today's date is ",
+        unknown: "I am not sure how to handle that command yet.",
+        empty: "Please enter a command.",
+        tooLong: "Your command is too long.",
+        saved: "Your note has been saved.",
+        noNotes: "You don't have any saved notes.",
+        notesCleared: "All saved notes have been cleared.",
+        cancelled: "Command cancelled."
+    },
+
+    "bn-IN": {
+        greeting: "হ্যালো! আমি Pownin। কীভাবে সাহায্য করতে পারি?",
+        identity: "আমি Pownin, তোমার স্মার্ট ভয়েস অ্যাসিস্ট্যান্ট।",
+        help: "আমি হিসাব, সময়, তারিখ, নোট, সমর্থিত অ্যাপ এবং সাধারণ প্রশ্নে সাহায্য করতে পারি।",
+        thanks: "তোমাকে স্বাগতম!",
+        time: "এখন তোমার ডিভাইসের সময় ",
+        date: "আজকের তারিখ ",
+        unknown: "এই কমান্ডটি কীভাবে পরিচালনা করতে হবে, তা এখনও বুঝতে পারিনি।",
+        empty: "অনুগ্রহ করে একটি কমান্ড লেখো।",
+        tooLong: "তোমার কমান্ডটি অনেক বড়।",
+        saved: "তোমার নোট সংরক্ষণ করা হয়েছে।",
+        noNotes: "তোমার কোনো সংরক্ষিত নোট নেই।",
+        notesCleared: "সব সংরক্ষিত নোট মুছে ফেলা হয়েছে।",
+        cancelled: "কমান্ড বাতিল করা হয়েছে।"
+    },
+
+    "hi-IN": {
+        greeting: "नमस्ते! मैं Pownin हूँ। मैं आपकी कैसे मदद कर सकता हूँ?",
+        identity: "मैं Pownin हूँ, आपका स्मार्ट वॉइस असिस्टेंट।",
+        help: "मैं गणना, समय, तारीख, नोट्स, समर्थित ऐप्स और सामान्य सवालों में मदद कर सकता हूँ।",
+        thanks: "आपका स्वागत है!",
+        time: "आपके डिवाइस में अभी समय है ",
+        date: "आज की तारीख है ",
+        unknown: "मैं अभी इस कमांड को समझ नहीं पाया।",
+        empty: "कृपया कोई कमांड लिखें।",
+        tooLong: "आपकी कमांड बहुत लंबी है।",
+        saved: "आपका नोट सेव हो गया है।",
+        noNotes: "आपके पास कोई सेव किया हुआ नोट नहीं है।",
+        notesCleared: "सभी सेव किए गए नोट हटा दिए गए हैं।",
+        cancelled: "कमांड रद्द कर दिया गया है।"
+    }
+};
+
+function getPowninText(key, language) {
+    const lang = normalizePowninLanguage(
+        language || getCurrentLanguage()
+    );
+
+    const dictionary = POWNIN_TEXT[lang] || POWNIN_TEXT["en-IN"];
+
+    return dictionary[key] || POWNIN_TEXT["en-IN"][key] || "";
+}
+
+// ------------------------------------------------------------
+// 5. LOCALIZED GREETING AND IDENTITY
+// ------------------------------------------------------------
+
+function getPowninGreeting(language) {
+    return getPowninText("greeting", language);
+}
+
+function getPowninIdentity(language) {
+    return getPowninText("identity", language);
+}
+
+function getPowninHelp(language) {
+    return getPowninText("help", language);
+}
+
+function getPowninThanks(language) {
+    return getPowninText("thanks", language);
+}
+
+// ------------------------------------------------------------
+// 6. LOCAL NOTES STORAGE
+// ------------------------------------------------------------
+
+function readPowninNotes() {
+    try {
+        const raw = localStorage.getItem(POWNIN_NOTES_KEY);
+
+        if (!raw) {
+            return [];
         }
-    );
 
-    return getReply(
-        language,
-        "Today's date is " + date,
-        "আজকের তারিখ " + date,
-        "आज की तारीख " + date + " है।"
-    );
+        const parsed = JSON.parse(raw);
+
+        if (!Array.isArray(parsed)) {
+            return [];
+        }
+
+        return parsed
+            .filter(function (note) {
+                return note &&
+                    typeof note.text === "string" &&
+                    note.text.trim().length > 0;
+            })
+            .slice(-100);
+    } catch (error) {
+        console.warn("Pownin notes could not be read:", error);
+        return [];
+    }
 }
 
-// ==========================================
-// 10. HELP
-// ==========================================
+function writePowninNotes(notes) {
+    try {
+        if (!Array.isArray(notes)) {
+            return false;
+        }
 
-function handleHelp(language) {
-    return getReply(
-        language,
-        "I can help with time, date, calculations, voice commands, app controls and supported Android features.",
-        "আমি সময়, তারিখ, হিসাব, voice command, app control এবং সমর্থিত Android feature-এ সাহায্য করতে পারি।",
-        "मैं समय, तारीख, गणना, voice command, app control और समर्थित Android सुविधाओं में मदद कर सकता हूँ।"
-    );
-}
-
-// ==========================================
-// 11. LANGUAGE SELECTION
-// ==========================================
-
-function handleLanguageCommand(command, language) {
-    const text = normalizeText(command);
-
-    if (
-        text.includes("bangla mode") ||
-        text.includes("বাংলা ভাষা") ||
-        text.includes("বাংলায় কথা")
-    ) {
-        selectedLanguage = "bn";
-        saveSettings();
-        return "বাংলা ভাষা নির্বাচন করা হয়েছে।";
-    }
-
-    if (
-        text.includes("hindi mode") ||
-        text.includes("हिंदी भाषा")
-    ) {
-        selectedLanguage = "hi";
-        saveSettings();
-        return "हिंदी भाषा चुनी गई है।";
-    }
-
-    if (
-        text.includes("english mode") ||
-        text.includes("speak english")
-    ) {
-        selectedLanguage = "en";
-        saveSettings();
-        return "English language selected.";
-    }
-
-    if (
-        text === "auto language" ||
-        text === "automatic language"
-    ) {
-        selectedLanguage = "auto";
-        saveSettings();
-
-        return getReply(
-            language,
-            "Automatic language detection enabled.",
-            "স্বয়ংক্রিয় ভাষা শনাক্তকরণ চালু হয়েছে।",
-            "स्वचालित भाषा पहचान चालू हो गई है।"
+        localStorage.setItem(
+            POWNIN_NOTES_KEY,
+            JSON.stringify(notes.slice(-100))
         );
-    }
 
-    return null;
+        return true;
+    } catch (error) {
+        console.warn("Pownin notes could not be saved:", error);
+        return false;
+    }
 }
 
-// ==========================================
-// 12. CALCULATOR INTEGRATION
-// ==========================================
+function savePowninNote(text) {
+    const content = String(text || "").trim();
 
-function handleCalculation(command, language) {
-    const math = window.PowninMath;
+    if (!content) {
+        return false;
+    }
 
-    if (!math) {
-        return null;
+    if (content.length > MAX_NOTE_LENGTH) {
+        return false;
+    }
+
+    const notes = readPowninNotes();
+
+    notes.push({
+        text: content,
+        createdAt: new Date().toISOString()
+    });
+
+    return writePowninNotes(notes);
+}
+
+function getPowninNotes() {
+    return readPowninNotes();
+}
+
+function clearPowninNotes() {
+    try {
+        localStorage.removeItem(POWNIN_NOTES_KEY);
+        return true;
+    } catch (error) {
+        console.warn("Pownin notes could not be cleared:", error);
+        return false;
+    }
+}
+
+function formatPowninNotes(language) {
+    const notes = getPowninNotes();
+
+    if (notes.length === 0) {
+        return getPowninText("noNotes", language);
+    }
+
+    const heading = language === "bn-IN"
+        ? "তোমার সংরক্ষিত নোট:"
+        : language === "hi-IN"
+            ? "आपके सेव किए गए नोट्स:"
+            : "Your saved notes:";
+
+    return heading + "\n" + notes.map(function (note, index) {
+        return (index + 1) + ". " + note.text;
+    }).join("\n");
+}
+
+// ------------------------------------------------------------
+// 7. CHARACTER COUNTER
+// ------------------------------------------------------------
+
+function updatePowninCharacterCount() {
+    if (!commandInput || !characterCount) {
+        return;
+    }
+
+    characterCount.textContent = String(
+        commandInput.value.length
+    );
+}
+
+// ------------------------------------------------------------
+// END OF PART 2/8
+// ============================================================
+
+// ============================================================
+// POWNIN SMART BRAIN v5.3
+// PART 3/8 — OFFLINE BRAIN, COMMANDS & MEDIUM CALCULATOR
+// ============================================================
+
+// ------------------------------------------------------------
+// 1. COMMAND MATCHING HELPERS
+// ------------------------------------------------------------
+
+function matchesPowninCommand(text, patterns) {
+    const value = normalizePowninText(text);
+
+    return patterns.some(function (pattern) {
+        return pattern.test(value);
+    });
+}
+
+// ------------------------------------------------------------
+// 2. GREETING DETECTION
+// ------------------------------------------------------------
+
+function isPowninGreetingCommand(text) {
+    return matchesPowninCommand(text, [
+        /^(hi|hello|hey|hii+|helo+|good morning|good afternoon|good evening)$/,
+        /^(হ্যালো|হাই|নমস্কার|সুপ্রভাত|শুভ সকাল|শুভ সন্ধ্যা)$/,
+        /^(नमस्ते|नमस्कार|हेलो|हाय|सुप्रभात)$/
+    ]);
+}
+
+// ------------------------------------------------------------
+// 3. IDENTITY DETECTION
+// ------------------------------------------------------------
+
+function isPowninIdentityCommand(text) {
+    const value = normalizePowninText(text);
+
+    const patterns = [
+        /^(who are you|what are you|what is your name|your name|tell me your name)$/,
+        /^(তুমি কে|তোমার নাম কি|তোমার নাম কী|তোমার পরিচয় কি)$/,
+        /^(आप कौन हो|तुम कौन हो|तुम्हारा नाम क्या है|आपका नाम क्या है)$/
+    ];
+
+    if (patterns.some(function (pattern) {
+        return pattern.test(value);
+    })) {
+        return true;
+    }
+
+    // Banglish identity questions.
+    return /^(tumi ke|tumi ke go|tomar nam ki|tomar naam ki|tomar name ki|tomar nam ki bolo|tomar naam ki bolo|tomar name ki bolo|who are tumi)$/.test(value);
+}
+
+// ------------------------------------------------------------
+// 4. HELP DETECTION
+// ------------------------------------------------------------
+
+function isPowninHelpCommand(text) {
+    return matchesPowninCommand(text, [
+        /^(help|what can you do|your features|commands)$/,
+        /^(সাহায্য করো|তুমি কি করতে পারো|তোমার কাজ কি)$/,
+        /^(मदद करो|तुम क्या कर सकते हो|आप क्या कर सकते हैं)$/
+    ]);
+}
+
+// ------------------------------------------------------------
+// 5. THANKS DETECTION
+// ------------------------------------------------------------
+
+function isPowninThanksCommand(text) {
+    return matchesPowninCommand(text, [
+        /^(thanks|thank you|thank u|thx)$/,
+        /^(ধন্যবাদ|অনেক ধন্যবাদ)$/,
+        /^(धन्यवाद|शुक्रिया|बहुत धन्यवाद)$/
+    ]);
+}
+
+// ------------------------------------------------------------
+// 6. TIME AND DATE DETECTION
+// ------------------------------------------------------------
+
+function isPowninTimeCommand(text) {
+    return matchesPowninCommand(text, [
+        /\b(what time is it|current time|tell me the time|time now)\b/,
+        /(এখন কয়টা বাজে|এখন সময় কত|সময় বলো)/,
+        /(अभी कितना बजा है|अभी समय क्या है|समय बताओ)/,
+        /\b(ekhon koyta baje|ekhon somoy koto|somoy bolo)\b/
+    ]);
+}
+
+function isPowninDateCommand(text) {
+    return matchesPowninCommand(text, [
+        /\b(what is the date|today's date|today date|what day is it)\b/,
+        /(আজ কত তারিখ|আজকের তারিখ|আজ কি বার)/,
+        /(आज की तारीख|आज कौन सा दिन है)/,
+        /\b(aj koto tarikh|ajker tarikh|aj ki bar)\b/
+    ]);
+}
+
+// ------------------------------------------------------------
+// 7. LOCALIZED TIME AND DATE REPLIES
+// ------------------------------------------------------------
+
+function getLocalizedTimeReply(language) {
+    return getPowninText("time", language) + getPowninTime();
+}
+
+function getLocalizedDateReply(language) {
+    return getPowninText("date", language) + getPowninDate();
+}
+
+// ------------------------------------------------------------
+// 8. MEDIUM BASIC CALCULATOR
+// Supports + - * / % and parentheses.
+// No eval() or Function().
+// ------------------------------------------------------------
+
+function tokenizePowninMath(expression) {
+    const input = normalizePowninDigits(expression)
+        .replace(/×/g, "*")
+        .replace(/÷/g, "/")
+        .replace(/−/g, "-")
+        .replace(/,/g, "");
+
+    const tokens = [];
+    let position = 0;
+
+    while (position < input.length) {
+        const remaining = input.slice(position);
+
+        const whitespace = remaining.match(/^\s+/);
+
+        if (whitespace) {
+            position += whitespace[0].length;
+            continue;
+        }
+
+        const number = remaining.match(
+            /^(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?/i
+        );
+
+        if (number) {
+            tokens.push({
+                type: "number",
+                value: Number(number[0])
+            });
+
+            position += number[0].length;
+            continue;
+        }
+
+        const operator = remaining.match(/^[+\-*/%()]/);
+
+        if (operator) {
+            tokens.push({
+                type: "operator",
+                value: operator[0]
+            });
+
+            position += 1;
+            continue;
+        }
+
+        throw new Error("Invalid mathematical expression.");
+    }
+
+    return tokens;
+}
+
+function calculatePowninBasic(expression) {
+    const tokens = tokenizePowninMath(expression);
+    let position = 0;
+
+    function peek() {
+        return tokens[position] || null;
+    }
+
+    function consume(value) {
+        const token = peek();
+
+        if (!token || token.value !== value) {
+            throw new Error("Invalid expression.");
+        }
+
+        position++;
+        return token;
+    }
+
+    function parsePrimary() {
+        const token = peek();
+
+        if (!token) {
+            throw new Error("Incomplete expression.");
+        }
+
+        if (token.value === "+") {
+            position++;
+            return parsePrimary();
+        }
+
+        if (token.value === "-") {
+            position++;
+            return -parsePrimary();
+        }
+
+        if (token.value === "(") {
+            position++;
+
+            const value = parseExpression();
+
+            consume(")");
+
+            return value;
+        }
+
+        if (token.type === "number") {
+            position++;
+            return token.value;
+        }
+
+        throw new Error("Invalid number.");
+    }
+
+    function parseTerm() {
+        let value = parsePrimary();
+
+        while (true) {
+            const token = peek();
+
+            if (!token || !["*", "/", "%"].includes(token.value)) {
+                break;
+            }
+
+            position++;
+
+            const right = parsePrimary();
+
+            if (token.value === "*") {
+                value *= right;
+            } else if (token.value === "/") {
+                if (right === 0) {
+                    throw new Error("Cannot divide by zero.");
+                }
+
+                value /= right;
+            } else {
+                if (right === 0) {
+                    throw new Error("Cannot divide by zero.");
+                }
+
+                value %= right;
+            }
+        }
+
+        return value;
+    }
+
+    function parseExpression() {
+        let value = parseTerm();
+
+        while (true) {
+            const token = peek();
+
+            if (!token || !["+", "-"].includes(token.value)) {
+                break;
+            }
+
+            position++;
+
+            const right = parseTerm();
+
+            if (token.value === "+") {
+                value += right;
+            } else {
+                value -= right;
+            }
+        }
+
+        return value;
+    }
+
+    if (tokens.length === 0) {
+        throw new Error("Empty expression.");
+    }
+
+    const result = parseExpression();
+
+    if (position !== tokens.length) {
+        throw new Error("Unexpected mathematical input.");
+    }
+
+    if (!Number.isFinite(result)) {
+        throw new Error("The result is not a finite number.");
+    }
+
+    return Number(result.toPrecision(12));
+}
+
+// ------------------------------------------------------------
+// 9. MATH ENGINE INTEGRATION
+// ------------------------------------------------------------
+
+function calculatePowninMath(expression) {
+    const engine = window.PowninMath;
+
+    if (engine && typeof engine.calculate === "function") {
+        try {
+            const result = engine.calculate(expression);
+
+            // Accept common result formats.
+            if (typeof result === "number" && Number.isFinite(result)) {
+                return {
+                    success: true,
+                    result: result
+                };
+            }
+
+            if (result && typeof result === "object") {
+                if (result.success === true) {
+                    const value =
+                        result.result !== undefined
+                            ? result.result
+                            : result.answer;
+
+                    if (value !== undefined && value !== null) {
+                        return {
+                            success: true,
+                            result: value
+                        };
+                    }
+                }
+
+                if (result.error) {
+                    return {
+                        success: false,
+                        error: String(result.error)
+                    };
+                }
+            }
+        } catch (error) {
+            console.warn("Pownin Math Engine error:", error);
+        }
     }
 
     try {
-        let answer = null;
-
-        // Try solve() first
-        if (typeof math.solve === "function") {
-            const solved = math.solve(command);
-
-            if (solved && solved.success === true) {
-                answer = solved.answer;
-            }
-        }
-
-        // Use calculate() if solve() did not return an answer
-        if (
-            (answer === null || answer === undefined) &&
-            typeof math.calculate === "function"
-        ) {
-            const result = math.calculate(command);
-
-            if (
-                result !== null &&
-                result !== undefined &&
-                result !== false
-            ) {
-                answer = result;
-            }
-        }
-
-        if (answer === null || answer === undefined) {
-            return null;
-        }
-
-        if (Array.isArray(answer)) {
-            answer = answer.join(", ");
-        }
-
-        if (typeof answer === "object") {
-            if (answer.success === true && answer.answer !== undefined) {
-                answer = answer.answer;
-            } else {
-                return null;
-            }
-        }
-
-        return getReply(
-            language,
-            "The answer is " + answer,
-            "উত্তর হলো " + answer,
-            "उत्तर है " + answer
-        );
-
+        return {
+            success: true,
+            result: calculatePowninBasic(expression)
+        };
     } catch (error) {
-        console.error("Math error:", error);
+        return {
+            success: false,
+            error: error.message || "Unable to calculate."
+        };
+    }
+}
+
+// ------------------------------------------------------------
+// 10. CALCULATION COMMAND DETECTION
+// ------------------------------------------------------------
+
+function extractPowninMathExpression(text) {
+    let value = normalizePowninDigits(String(text || "").trim());
+
+    value = value
+        .replace(/^(calculate|calc|compute|solve)\s+/i, "")
+        .replace(/^(হিসাব করো|গণনা করো|যোগ করো)\s*/, "")
+        .replace(/^(गणना करो|हल करो)\s*/, "")
+        .replace(/[?=]+$/g, "")
+        .trim();
+
+    if (!value) {
         return null;
     }
+
+    if (!/[0-9]/.test(value)) {
+        return null;
+    }
+
+    if (!/^[0-9+\-*/%().×÷−,\s]+$/.test(value)) {
+        return null;
+    }
+
+    return value;
 }
 
-// ==========================================
-// 13. OFFLINE COMMAND ROUTER
-// ==========================================
+function isPowninCalculationCommand(text) {
+    return extractPowninMathExpression(text) !== null;
+}
 
-function getOfflineReply(command) {
-    const text = normalizeText(command);
-    const language = getActiveLanguage(command);
+function getPowninCalculationReply(expression, language) {
+    const result = calculatePowninMath(expression);
+
+    if (!result.success) {
+        if (language === "bn-IN") {
+            return "হিসাবটি করতে সমস্যা হয়েছে: " + result.error;
+        }
+
+        if (language === "hi-IN") {
+            return "गणना में समस्या हुई: " + result.error;
+        }
+
+        return "Calculation error: " + result.error;
+    }
+
+    if (language === "bn-IN") {
+        return "হিসাবের ফল হলো: " + result.result;
+    }
+
+    if (language === "hi-IN") {
+        return "गणना का परिणाम है: " + result.result;
+    }
+
+    return "The answer is " + result.result;
+}
+
+// ------------------------------------------------------------
+// 11. BASIC OFFLINE BRAIN
+// ------------------------------------------------------------
+
+function getPowninOfflineReply(command, language) {
+    const text = String(command || "").trim();
+    const lang = normalizePowninLanguage(language || detectPowninLanguage(text));
 
     if (!text) {
-        return getReply(
-            language,
-            "Please enter a message.",
-            "কিছু লিখে পাঠাও।",
-            "कृपया कुछ लिखें।"
-        );
+        return getPowninText("empty", lang);
     }
 
-    const languageReply =
-        handleLanguageCommand(text, language);
-
-    if (languageReply !== null) {
-        return languageReply;
+    if (isPowninGreetingCommand(text)) {
+        return getPowninGreeting(lang);
     }
 
-    if (/^(hi|hello|hey|হ্যালো|হাই|नमस्ते|हेलो)$/i.test(text)) {
-        return handleGreeting(language);
+    if (isPowninIdentityCommand(text)) {
+        return getPowninIdentity(lang);
     }
 
-    if (
-        /\b(who are you|your name)\b/.test(text) ||
-        /\b(tomar nam ki|tomar name ki|tomar naam ki)\b/.test(text) ||
-        text.includes("তুমি কে") ||
-        text.includes("তোমার নাম") ||
-        text.includes("आप कौन हैं") ||
-        text.includes("तुम्हारा नाम")
-    ) {
-        return handleIdentity(language);
+    if (isPowninHelpCommand(text)) {
+        return getPowninHelp(lang);
     }
 
-    if (
-        /\b(time|somoy|shomoy)\b/.test(text) ||
-        text.includes("সময়") ||
-        text.includes("সময়") ||
-        text.includes("समय")
-    ) {
-        return handleTime(language);
+    if (isPowninThanksCommand(text)) {
+        return getPowninThanks(lang);
     }
 
-    if (
-        /\b(date|today)\b/.test(text) ||
-        text.includes("আজ") ||
-        text.includes("তারিখ") ||
-        text.includes("आज") ||
-        text.includes("तारीख")
-    ) {
-        return handleDate(language);
+    if (isPowninTimeCommand(text)) {
+        return getLocalizedTimeReply(lang);
     }
 
-    if (
-        text === "help" ||
-        text.includes("সাহায্য") ||
-        text.includes("मदद")
-    ) {
-        return handleHelp(language);
+    if (isPowninDateCommand(text)) {
+        return getLocalizedDateReply(lang);
     }
 
-    if (
-        text.includes("thank you") ||
-        text.includes("thanks") ||
-        text.includes("ধন্যবাদ") ||
-        text.includes("शुक्रिया")
-    ) {
-        return getReply(
-            language,
-            "You're welcome!",
-            "স্বাগতম!",
-            "आपका स्वागत है!"
-        );
+    if (isPowninCalculationCommand(text)) {
+        const expression = extractPowninMathExpression(text);
+
+        return getPowninCalculationReply(expression, lang);
     }
 
-    const calculation =
-        handleCalculation(command, language);
-
-    if (calculation !== null) {
-        return calculation;
-    }
-
-    return getReply(
-        language,
-        "I don't know that yet. My offline brain is still learning.",
-        "এই প্রশ্নের উত্তর এখনো আমার জানা নেই। আমার Offline Brain আরও শিখছে।",
-        "मुझे अभी इसका उत्तर नहीं पता। मेरा Offline Brain अभी सीख रहा है।"
-    );
+    return getPowninText("unknown", lang);
 }
 
-// ==========================================
-// PART 1 END
-// APPEND PART 2 BELOW THIS LINE
-// ==========================================
+// ------------------------------------------------------------
+// END OF PART 3/8
+// ============================================================
 
+// ============================================================
+// POWNIN SMART BRAIN v5.3
+// PART 4/8 — ANDROID BRIDGE, APP CONTROL & DEVICE COMMANDS
+// ============================================================
 
-/* =========================================================
-   POWNIN SMART BRAIN v4.0
-   PART 2/3 — ANDROID BRIDGE + VOICE + APP CONTROL
-   ========================================================= */
-
-// ==========================================
-// 14. ANDROID BRIDGE
-// ==========================================
+// ------------------------------------------------------------
+// 1. ANDROID BRIDGE ACCESS
+// ------------------------------------------------------------
 
 function getPowninAndroidBridge() {
     try {
@@ -628,133 +1083,934 @@ function getPowninAndroidBridge() {
             return window.PowninAndroid;
         }
     } catch (error) {
-        console.warn("Android bridge unavailable:", error);
+        console.warn("Pownin Android Bridge unavailable:", error);
     }
 
     return null;
 }
 
-function isAndroidBridgeReady() {
+// ------------------------------------------------------------
+// 2. SAFE ANDROID METHOD CALL
+// ------------------------------------------------------------
+
+function callPowninAndroid(methodName, args) {
     const bridge = getPowninAndroidBridge();
 
-    return !!(
-        bridge &&
-        typeof bridge.speak === "function"
-    );
-}
-
-function callAndroidMethod(methodName, ...args) {
-    const bridge = getPowninAndroidBridge();
-
-    if (
-        !bridge ||
-        typeof bridge[methodName] !== "function"
-    ) {
+    if (!bridge) {
         return {
             success: false,
-            message: "Android feature is not available yet."
+            error: "Android bridge is unavailable."
+        };
+    }
+
+    if (typeof bridge[methodName] !== "function") {
+        return {
+            success: false,
+            error: "Android method is not available: " + methodName
         };
     }
 
     try {
-        const result = bridge[methodName](...args);
+        const result = bridge[methodName].apply(
+            bridge,
+            Array.isArray(args) ? args : []
+        );
+
+        // Android bridge methods may return a status string.
+        if (
+            typeof result === "string" &&
+            /^(error|failed|not_found|app_not_found|unavailable)/i.test(result)
+        ) {
+            return {
+                success: false,
+                error: result
+            };
+        }
+
+        if (result === false) {
+            return {
+                success: false,
+                error: "Android command was rejected."
+            };
+        }
 
         return {
             success: true,
             result: result
         };
-
     } catch (error) {
-        console.error(
-            "Android method error:",
-            methodName,
-            error
-        );
-
         return {
             success: false,
-            message: error.message || "Android operation failed."
+            error: error.message || "Android command failed."
         };
     }
 }
 
-// ==========================================
-// 15. VOICE CONFIGURATION
-// ==========================================
+// ------------------------------------------------------------
+// 3. LOCALIZED DEVICE COMMAND MESSAGES
+// ------------------------------------------------------------
 
-let voiceStyle = "gaming";
-let voiceRate = 0.94;
-let voicePitch = 0.90;
+function getPowninDeviceMessage(key, language, extra) {
+    const lang = normalizePowninLanguage(language);
+    const value = String(extra || "");
 
-function setVoiceStyle(style) {
-    const allowed = [
-        "normal",
-        "gaming",
-        "calm"
+    const messages = {
+        "en-IN": {
+            opening: "Opening ",
+            opened: "The command to open ",
+            failed: "I couldn't open ",
+            unavailable: "This device feature is not available.",
+            volumeUp: "Volume increased.",
+            volumeDown: "Volume decreased.",
+            muted: "Mute command sent.",
+            unmuted: "Unmute command sent.",
+            settings: "Opening device settings.",
+            settingsFailed: "I couldn't open device settings.",
+            voiceGaming: "Gaming voice style selected.",
+            voiceNormal: "Normal voice style selected.",
+            voiceDeep: "Deep voice style selected.",
+            languageSet: "Voice language changed."
+        },
+
+        "bn-IN": {
+            opening: "খুলছি ",
+            opened: "খোলার কমান্ড পাঠানো হয়েছে: ",
+            failed: "খুলতে পারিনি: ",
+            unavailable: "এই ডিভাইসের সুবিধাটি উপলব্ধ নেই।",
+            volumeUp: "ভলিউম বাড়ানোর কমান্ড পাঠানো হয়েছে।",
+            volumeDown: "ভলিউম কমানোর কমান্ড পাঠানো হয়েছে।",
+            muted: "Mute কমান্ড পাঠানো হয়েছে।",
+            unmuted: "Unmute কমান্ড পাঠানো হয়েছে।",
+            settings: "ডিভাইসের Settings খোলার কমান্ড পাঠানো হয়েছে।",
+            settingsFailed: "ডিভাইসের Settings খুলতে পারিনি।",
+            voiceGaming: "Gaming voice style নির্বাচন করা হয়েছে।",
+            voiceNormal: "Normal voice style নির্বাচন করা হয়েছে।",
+            voiceDeep: "Deep voice style নির্বাচন করা হয়েছে।",
+            languageSet: "Voice language পরিবর্তন করা হয়েছে।"
+        },
+
+        "hi-IN": {
+            opening: "खोल रहा हूँ ",
+            opened: "ऐप खोलने का कमांड भेजा गया: ",
+            failed: "मैं इसे खोल नहीं पाया: ",
+            unavailable: "यह सुविधा इस डिवाइस पर उपलब्ध नहीं है।",
+            volumeUp: "वॉल्यूम बढ़ाने का कमांड भेजा गया।",
+            volumeDown: "वॉल्यूम कम करने का कमांड भेजा गया।",
+            muted: "म्यूट कमांड भेजा गया।",
+            unmuted: "अनम्यूट कमांड भेजा गया।",
+            settings: "डिवाइस सेटिंग्स खोलने का कमांड भेजा गया।",
+            settingsFailed: "मैं डिवाइस सेटिंग्स नहीं खोल पाया।",
+            voiceGaming: "गेमिंग वॉइस स्टाइल चुना गया।",
+            voiceNormal: "नॉर्मल वॉइस स्टाइल चुना गया।",
+            voiceDeep: "डीप वॉइस स्टाइल चुना गया।",
+            languageSet: "वॉइस भाषा बदल दी गई।"
+        }
+    };
+
+    const dictionary = messages[lang] || messages["en-IN"];
+
+    return (dictionary[key] || dictionary.unavailable) + value;
+}
+
+// ------------------------------------------------------------
+// 4. SUPPORTED APP MAP
+// ------------------------------------------------------------
+
+const POWNIN_APP_MAP = {
+    whatsapp: "whatsapp",
+    youtube: "youtube",
+    chrome: "chrome",
+    browser: "chrome",
+    calculator: "calculator",
+    camera: "camera",
+    settings: "settings",
+    maps: "maps",
+    gallery: "gallery",
+    photos: "photos"
+};
+
+// ------------------------------------------------------------
+// 5. APP NAME DETECTION
+// ------------------------------------------------------------
+
+function detectPowninAppName(command) {
+    const text = normalizePowninText(command);
+
+    const appPatterns = [
+        {
+            app: "whatsapp",
+            patterns: [
+                /\bwhatsapp\b/,
+                /व्हाट्सऐप|व्हाट्सएप/,
+                /হোয়াটসঅ্যাপ|হোয়াটসঅ্যাপ/,
+                /\b(whatsapp|whats app)\b/
+            ]
+        },
+        {
+            app: "youtube",
+            patterns: [
+                /\byoutube\b/,
+                /यूट्यूब/,
+                /ইউটিউব/
+            ]
+        },
+        {
+            app: "chrome",
+            patterns: [
+                /\bchrome\b/,
+                /\bbrowser\b/,
+                /क्रोम/,
+                /ক্রোম/
+            ]
+        },
+        {
+            app: "calculator",
+            patterns: [
+                /\bcalculator\b/,
+                /\bcalc\b/,
+                /कैलकुलेटर/,
+                /ক্যালকুলেটর/
+            ]
+        },
+        {
+            app: "camera",
+            patterns: [
+                /\bcamera\b/,
+                /कैमरा/,
+                /ক্যামেরা/
+            ]
+        },
+        {
+            app: "settings",
+            patterns: [
+                /\bsettings\b/,
+                /\bsetting\b/,
+                /सेटिंग/,
+                /সেটিংস/
+            ]
+        },
+        {
+            app: "maps",
+            patterns: [
+                /\bgoogle maps\b/,
+                /\bmaps\b/,
+                /गूगल मैप्स/,
+                /গুগল ম্যাপস/
+            ]
+        },
+        {
+            app: "gallery",
+            patterns: [
+                /\bgallery\b/,
+                /गैलरी/,
+                /গ্যালারি/
+            ]
+        },
+        {
+            app: "photos",
+            patterns: [
+                /\bgoogle photos\b/,
+                /\bphotos\b/,
+                /गूगल फोटोज/,
+                /গুগল ফটোস/
+            ]
+        }
     ];
 
-    if (!allowed.includes(style)) {
-        return false;
-    }
-
-    voiceStyle = style;
-
-    const bridge = getPowninAndroidBridge();
-
-    if (
-        bridge &&
-        typeof bridge.setVoiceStyle === "function"
-    ) {
-        try {
-            bridge.setVoiceStyle(style);
-        } catch (error) {
-            console.warn("Voice style setting failed:", error);
+    for (const item of appPatterns) {
+        if (item.patterns.some(function (pattern) {
+            return pattern.test(text);
+        })) {
+            return item.app;
         }
     }
 
-    return true;
+    return null;
 }
 
-function getVoiceSettings() {
+// ------------------------------------------------------------
+// 6. OPEN APP COMMAND DETECTION
+// ------------------------------------------------------------
+
+function isPowninOpenAppCommand(command) {
+    const text = normalizePowninText(command);
+
+    const openPatterns = [
+        /\b(open|launch|start|run)\b/,
+        /খোলো|চালু করো|ওপেন করো/,
+        /खोलो|चालू करो|ओपन करो/,
+        /\b(kholo|chalu koro|open koro)\b/
+    ];
+
+    return openPatterns.some(function (pattern) {
+        return pattern.test(text);
+    }) && detectPowninAppName(text) !== null;
+}
+
+// ------------------------------------------------------------
+// 7. OPEN APP
+// ------------------------------------------------------------
+
+function processPowninOpenAppCommand(command, language) {
+    const lang = normalizePowninLanguage(language);
+    const app = detectPowninAppName(command);
+
+    if (!app) {
+        return {
+            handled: false
+        };
+    }
+
+    const result = callPowninAndroid("openApp", [app]);
+
+    if (!result.success) {
+        return {
+            handled: true,
+            reply: getPowninDeviceMessage("failed", lang, app + ".")
+        };
+    }
+
     return {
-        style: voiceStyle,
-        rate: voiceRate,
-        pitch: voicePitch
+        handled: true,
+        reply: getPowninDeviceMessage("opened", lang, app + ".")
     };
 }
 
-// ==========================================
-// 16. LANGUAGE-AWARE SPEECH
-// ==========================================
+// ------------------------------------------------------------
+// 8. SETTINGS COMMAND
+// ------------------------------------------------------------
 
-function speak(text, language) {
-    if (!speechEnabled) return;
+function isPowninSettingsCommand(command) {
+    const text = normalizePowninText(command);
+
+    return /\b(open|go to|show)\b.*\b(settings|setting)\b/.test(text) ||
+        /সেটিংস খোলো|সেটিংস খুলে দাও/.test(text) ||
+        /सेटिंग खोलो|सेटिंग्स खोलो/.test(text) ||
+        /\b(settings kholo|setting kholo)\b/.test(text);
+}
+
+function processPowninSettingsCommand(language) {
+    const lang = normalizePowninLanguage(language);
+
+    const result = callPowninAndroid("openSettingsPage", []);
+
+    if (!result.success) {
+        return {
+            handled: true,
+            reply: getPowninDeviceMessage("settingsFailed", lang)
+        };
+    }
+
+    return {
+        handled: true,
+        reply: getPowninDeviceMessage("settings", lang)
+    };
+}
+
+// ------------------------------------------------------------
+// 9. VOLUME COMMAND DETECTION
+// ------------------------------------------------------------
+
+function detectPowninVolumeAction(command) {
+    const text = normalizePowninText(command);
+
+    if (
+        /\b(volume up|increase volume|raise volume)\b/.test(text) ||
+        /ভলিউম বাড়াও|শব্দ বাড়াও/.test(text) ||
+        /आवाज़ बढ़ाओ|वॉल्यूम बढ़ाओ/.test(text)
+    ) {
+        return "up";
+    }
+
+    if (
+        /\b(volume down|decrease volume|lower volume)\b/.test(text) ||
+        /ভলিউম কমাও|শব্দ কমাও/.test(text) ||
+        /आवाज़ कम करो|वॉल्यूम कम करो/.test(text)
+    ) {
+        return "down";
+    }
+
+    if (
+        /\b(mute|mute volume)\b/.test(text) ||
+        /মিউট করো|শব্দ বন্ধ করো/.test(text) ||
+        /म्यूट करो|आवाज़ बंद करो/.test(text)
+    ) {
+        return "mute";
+    }
+
+    if (
+        /\b(unmute|restore volume)\b/.test(text) ||
+        /আনমিউট করো|শব্দ চালু করো/.test(text) ||
+        /अनम्यूट करो|आवाज़ चालू करो/.test(text)
+    ) {
+        return "unmute";
+    }
+
+    return null;
+}
+
+// ------------------------------------------------------------
+// 10. PROCESS VOLUME COMMAND
+// ------------------------------------------------------------
+
+function processPowninVolumeCommand(action, language) {
+    const lang = normalizePowninLanguage(language);
+
+    const result = callPowninAndroid("adjustVolume", [action]);
+
+    if (!result.success) {
+        return {
+            handled: true,
+            reply: getPowninDeviceMessage("unavailable", lang)
+        };
+    }
+
+    const messageKey = {
+        up: "volumeUp",
+        down: "volumeDown",
+        mute: "muted",
+        unmute: "unmuted"
+    }[action];
+
+    return {
+        handled: true,
+        reply: getPowninDeviceMessage(messageKey, lang)
+    };
+}
+
+// ------------------------------------------------------------
+// 11. VOICE STYLE COMMAND DETECTION
+// ------------------------------------------------------------
+
+function detectPowninVoiceStyle(command) {
+    const text = normalizePowninText(command);
+
+    if (
+        /\b(gaming voice|game voice|gaming style)\b/.test(text) ||
+        /গেমিং ভয়েস|গেমিং ভয়েস/.test(text) ||
+        /गेमिंग वॉइस/.test(text)
+    ) {
+        return "gaming";
+    }
+
+    if (
+        /\b(normal voice|normal style)\b/.test(text) ||
+        /স্বাভাবিক ভয়েস|নরমাল ভয়েস/.test(text) ||
+        /नॉर्मल वॉइस/.test(text)
+    ) {
+        return "normal";
+    }
+
+    if (
+        /\b(deep voice|deep style)\b/.test(text) ||
+        /গভীর ভয়েস|ডিপ ভয়েস/.test(text) ||
+        /डीप वॉइस/.test(text)
+    ) {
+        return "deep";
+    }
+
+    return null;
+}
+
+// ------------------------------------------------------------
+// 12. PROCESS VOICE STYLE COMMAND
+// ------------------------------------------------------------
+
+function processPowninVoiceStyleCommand(style, language) {
+    const lang = normalizePowninLanguage(language);
+
+    const result = callPowninAndroid("setVoiceStyle", [style]);
+
+    if (!result.success) {
+        return {
+            handled: true,
+            reply: getPowninDeviceMessage("unavailable", lang)
+        };
+    }
+
+    const messageKey = {
+        gaming: "voiceGaming",
+        normal: "voiceNormal",
+        deep: "voiceDeep"
+    }[style];
+
+    return {
+        handled: true,
+        reply: getPowninDeviceMessage(messageKey, lang)
+    };
+}
+
+// ------------------------------------------------------------
+// 13. VOICE LANGUAGE COMMAND DETECTION
+// ------------------------------------------------------------
+
+function detectPowninVoiceLanguage(command) {
+    const text = normalizePowninText(command);
+
+    if (
+        /\b(bengali voice|bangla voice|speak bengali)\b/.test(text) ||
+        /বাংলা ভয়েস|বাংলায় কথা বলো/.test(text) ||
+        /बंगाली वॉइस|बांग्ला में बोलो/.test(text)
+    ) {
+        return "bn-IN";
+    }
+
+    if (
+        /\b(hindi voice|speak hindi)\b/.test(text) ||
+        /হিন্দি ভয়েস/.test(text) ||
+        /हिंदी वॉइस|हिंदी में बोलो/.test(text)
+    ) {
+        return "hi-IN";
+    }
+
+    if (
+        /\b(english voice|speak english)\b/.test(text) ||
+        /ইংরেজি ভয়েস/.test(text) ||
+        /अंग्रेज़ी वॉइस/.test(text)
+    ) {
+        return "en-IN";
+    }
+
+    return null;
+}
+
+// ------------------------------------------------------------
+// 14. PROCESS VOICE LANGUAGE COMMAND
+// ------------------------------------------------------------
+
+function processPowninVoiceLanguageCommand(language) {
+    const lang = normalizePowninLanguage(language);
+
+    selectedLanguage = lang;
+
+    if (languageSelect) {
+        languageSelect.value = lang;
+    }
+
+    const result = callPowninAndroid("setTtsLanguage", [lang]);
+
+    if (!result.success) {
+        return {
+            handled: true,
+            reply: getPowninDeviceMessage("unavailable", lang)
+        };
+    }
+
+    return {
+        handled: true,
+        reply: getPowninDeviceMessage("languageSet", lang)
+    };
+}
+
+// ------------------------------------------------------------
+// END OF PART 4/8
+// ============================================================
+
+// ============================================================
+// POWNIN SMART BRAIN v5.3
+// PART 5/8 — ONLINE AI, API SETTINGS & HYBRID BRAIN
+// ============================================================
+
+// ------------------------------------------------------------
+// 1. ONLINE AI SETTINGS
+// ------------------------------------------------------------
+
+function getPowninOnlineSettings() {
+    const endpoint = endpointInput
+        ? endpointInput.value.trim()
+        : "";
+
+    const model = modelInput
+        ? modelInput.value.trim()
+        : "";
+
+    // Read the key only when a request is made.
+    // Never save it in localStorage.
+    const apiKey = apiKeyInput
+        ? apiKeyInput.value.trim()
+        : "";
+
+    return {
+        endpoint: endpoint,
+        model: model,
+        apiKey: apiKey
+    };
+}
+
+// ------------------------------------------------------------
+// 2. VALIDATE ONLINE ENDPOINT
+// ------------------------------------------------------------
+
+function validatePowninEndpoint(endpoint) {
+    if (!endpoint) {
+        return {
+            success: false,
+            error: "Please configure an AI backend endpoint."
+        };
+    }
+
+    try {
+        const url = new URL(endpoint);
+
+        if (url.protocol !== "https:") {
+            return {
+                success: false,
+                error: "Online AI requires a secure HTTPS endpoint."
+            };
+        }
+
+        if (url.username || url.password) {
+            return {
+                success: false,
+                error: "Credentials must not be included in the endpoint URL."
+            };
+        }
+
+        return {
+            success: true,
+            url: url
+        };
+    } catch (error) {
+        return {
+            success: false,
+            error: "The AI endpoint URL is invalid."
+        };
+    }
+}
+
+// ------------------------------------------------------------
+// 3. SYSTEM INSTRUCTIONS
+// ------------------------------------------------------------
+
+function getPowninSystemPrompt(language) {
+    const lang = normalizePowninLanguage(language);
+
+    const languageInstructions = {
+        "bn-IN": "Reply naturally in Bengali. Understand Bengali and Banglish.",
+        "hi-IN": "Reply naturally in Hindi. Understand Hindi and common Hinglish.",
+        "en-IN": "Reply naturally in English."
+    };
+
+    return [
+        "You are Pownin, a helpful multilingual AI voice assistant.",
+        languageInstructions[lang],
+        "Be friendly, clear, accurate and concise.",
+        "Do not claim to control a device unless the native command confirms it.",
+        "If you do not know something, say so honestly.",
+        "Do not invent facts or pretend to have performed actions.",
+        "Use simple language suitable for everyday conversation."
+    ].join(" ");
+}
+
+// ------------------------------------------------------------
+// 4. CREATE ONLINE AI REQUEST
+// ------------------------------------------------------------
+
+function createPowninAIRequest(command, language) {
+    const settings = getPowninOnlineSettings();
+
+    const validation = validatePowninEndpoint(settings.endpoint);
+
+    if (!validation.success) {
+        throw new Error(validation.error);
+    }
+
+    if (!settings.model) {
+        throw new Error("Please enter an AI model name.");
+    }
+
+    const messages = [
+        {
+            role: "system",
+            content: getPowninSystemPrompt(language)
+        }
+    ];
+
+    getPowninHistory().forEach(function (item) {
+        messages.push({
+            role: item.role,
+            content: item.content
+        });
+    });
+
+    // The current user command is already included in history
+    // when this function is called after showUserMessage().
+    const lastMessage = messages[messages.length - 1];
+
+    if (
+        !lastMessage ||
+        lastMessage.role !== "user" ||
+        lastMessage.content !== command
+    ) {
+        messages.push({
+            role: "user",
+            content: command
+        });
+    }
+
+    return {
+        endpoint: settings.endpoint,
+        model: settings.model,
+        apiKey: settings.apiKey,
+        body: {
+            model: settings.model,
+            messages: messages,
+            temperature: 0.7,
+            stream: false
+        }
+    };
+}
+
+// ------------------------------------------------------------
+// 5. EXTRACT AI RESPONSE
+// ------------------------------------------------------------
+
+function extractPowninAIResponse(data) {
+    if (!data || typeof data !== "object") {
+        throw new Error("The AI server returned an invalid response.");
+    }
+
+    // OpenAI-compatible chat completion response.
+    const choice = Array.isArray(data.choices)
+        ? data.choices[0]
+        : null;
+
+    if (choice && choice.message) {
+        const content = choice.message.content;
+
+        if (typeof content === "string" && content.trim()) {
+            return content.trim();
+        }
+
+        // Some providers return content as an array.
+        if (Array.isArray(content)) {
+            const combined = content
+                .map(function (part) {
+                    return typeof part === "string"
+                        ? part
+                        : part && typeof part.text === "string"
+                            ? part.text
+                            : "";
+                })
+                .join("")
+                .trim();
+
+            if (combined) {
+                return combined;
+            }
+        }
+    }
+
+    // Simple custom backend response.
+    if (typeof data.reply === "string" && data.reply.trim()) {
+        return data.reply.trim();
+    }
+
+    if (typeof data.response === "string" && data.response.trim()) {
+        return data.response.trim();
+    }
+
+    throw new Error("No readable AI reply was found.");
+}
+
+// ------------------------------------------------------------
+// 6. ONLINE AI REQUEST
+// ------------------------------------------------------------
+
+async function askPowninOnlineAI(command, language) {
+    const request = createPowninAIRequest(command, language);
+
+    const controller = new AbortController();
+
+    activePowninAbortController = controller;
+
+    const timeoutId = setTimeout(function () {
+        controller.abort();
+    }, 30000);
+
+    try {
+        const headers = {
+            "Content-Type": "application/json"
+        };
+
+        // For a private backend, prefer server-side authentication.
+        // This optional field is never stored by this script.
+        if (request.apiKey) {
+            headers.Authorization = "Bearer " + request.apiKey;
+        }
+
+        const response = await fetch(request.endpoint, {
+            method: "POST",
+            headers: headers,
+            body: JSON.stringify(request.body),
+            signal: controller.signal
+        });
+
+        if (!response.ok) {
+            throw new Error(
+                "AI server error: HTTP " + response.status
+            );
+        }
+
+        const data = await response.json();
+
+        return extractPowninAIResponse(data);
+
+    } finally {
+        clearTimeout(timeoutId);
+
+        if (activePowninAbortController === controller) {
+            activePowninAbortController = null;
+        }
+    }
+}
+
+// ------------------------------------------------------------
+// 7. OFFLINE / ONLINE / HYBRID MODE
+// ------------------------------------------------------------
+
+async function getPowninSmartReply(command, language, token) {
+    const mode = currentMode;
+    const lang = normalizePowninLanguage(language);
+
+    if (token !== powninCommandToken) {
+        return null;
+    }
+
+    if (mode === "offline") {
+        return getPowninOfflineReply(command, lang);
+    }
+
+    if (mode === "online") {
+        setStatus("Connecting to Online AI...");
+
+        return await askPowninOnlineAI(command, lang);
+    }
+
+    // Hybrid mode: try Online AI first.
+    try {
+        setStatus("Hybrid AI is thinking...");
+
+        const onlineReply = await askPowninOnlineAI(command, lang);
+
+        if (token !== powninCommandToken) {
+            return null;
+        }
+
+        return onlineReply;
+
+    } catch (error) {
+        if (token !== powninCommandToken) {
+            return null;
+        }
+
+        console.warn(
+            "Pownin Online AI unavailable. Using offline brain:",
+            error
+        );
+
+        setNetworkStatus("OFFLINE FALLBACK");
+
+        return getPowninOfflineReply(command, lang);
+    }
+}
+
+// ------------------------------------------------------------
+// 8. CANCEL ACTIVE ONLINE REQUEST
+// ------------------------------------------------------------
+
+function abortPowninOnlineRequest() {
+    if (activePowninAbortController) {
+        try {
+            activePowninAbortController.abort();
+        } catch (error) {
+            console.warn("Pownin request cancellation failed:", error);
+        }
+
+        activePowninAbortController = null;
+    }
+}
+
+// ------------------------------------------------------------
+// 9. API KEY CLEAR CONTROL
+// ------------------------------------------------------------
+
+function clearPowninApiKey() {
+    if (apiKeyInput) {
+        apiKeyInput.value = "";
+    }
+
+    setStatus("API key cleared from this input.");
+}
+
+// ------------------------------------------------------------
+// 10. ONLINE CONNECTION STATUS
+// ------------------------------------------------------------
+
+function getPowninConnectionStatus() {
+    if (!navigator.onLine) {
+        return "OFFLINE";
+    }
+
+    if (currentMode === "offline") {
+        return "OFFLINE MODE";
+    }
+
+    if (currentMode === "online") {
+        return "ONLINE AI";
+    }
+
+    return "HYBRID MODE";
+}
+
+// ------------------------------------------------------------
+// END OF PART 5/8
+// ============================================================
+
+// ============================================================
+// POWNIN SMART BRAIN v5.3
+// PART 6/8 — VOICE SYSTEM, SPEECH RECOGNITION & NOTES
+// ============================================================
+
+// ------------------------------------------------------------
+// 1. SPEECH LANGUAGE DETECTION
+// ------------------------------------------------------------
+
+function getPowninSpeechLanguage(text) {
+    return normalizePowninLanguage(
+        detectPowninLanguage(text || "")
+    );
+}
+
+// ------------------------------------------------------------
+// 2. TEXT TO SPEECH
+// ------------------------------------------------------------
+
+function speak(text) {
+    if (!speechEnabled) {
+        return false;
+    }
 
     const message = String(text || "").trim();
 
-    if (!message) return;
+    if (!message) {
+        return false;
+    }
 
-    const activeLanguage =
-        language || getActiveLanguage(message);
-
-    const languageCode =
-        getLanguageCode(activeLanguage);
-
+    const language = getPowninSpeechLanguage(message);
     const bridge = getPowninAndroidBridge();
 
+    // Prefer native Android TextToSpeech.
     if (bridge && typeof bridge.speak === "function") {
         try {
-            isSpeaking = true;
-            setAssistantState("SPEAKING");
+            const result = bridge.speak(message);
 
-            // Existing bridge accepts text and language.
-            bridge.speak(message, languageCode);
-
-            return;
-
+            if (result !== false) {
+                setVoiceStatus("NATIVE TTS");
+                return true;
+            }
         } catch (error) {
             console.warn("Native TTS failed:", error);
-            isSpeaking = false;
         }
     }
 
@@ -766,55 +2022,47 @@ function speak(text, language) {
         try {
             window.speechSynthesis.cancel();
 
-            const utterance =
-                new SpeechSynthesisUtterance(message);
+            const utterance = new SpeechSynthesisUtterance(message);
+            utterance.lang = language;
+            utterance.rate = 1;
+            utterance.pitch = 1;
 
-            utterance.lang = languageCode;
-            utterance.rate = voiceRate;
-            utterance.pitch = voicePitch;
+            utterance.onstart = function () {
+                setVoiceStatus("SPEAKING");
+            };
 
             utterance.onend = function () {
-                isSpeaking = false;
-                setReadyState();
+                setVoiceStatus("READY");
             };
 
             utterance.onerror = function () {
-                isSpeaking = false;
-                setReadyState();
+                setVoiceStatus("VOICE ERROR");
             };
 
             window.speechSynthesis.speak(utterance);
 
+            return true;
         } catch (error) {
-            console.error("Browser TTS error:", error);
-            isSpeaking = false;
-            setReadyState();
+            console.warn("Browser TTS failed:", error);
         }
-    } else {
-        isSpeaking = false;
-        setReadyState();
     }
+
+    setVoiceStatus("VOICE UNAVAILABLE");
+    return false;
 }
 
-function speakReply(message, language) {
-    speak(message, language);
-}
-
-// ==========================================
-// 17. STOP VOICE
-// ==========================================
+// ------------------------------------------------------------
+// 3. STOP SPEAKING
+// ------------------------------------------------------------
 
 function stopSpeaking() {
     const bridge = getPowninAndroidBridge();
 
-    if (
-        bridge &&
-        typeof bridge.stopSpeaking === "function"
-    ) {
+    if (bridge && typeof bridge.stopSpeaking === "function") {
         try {
             bridge.stopSpeaking();
         } catch (error) {
-            console.warn("Native stop speaking failed:", error);
+            console.warn("Native speech stop failed:", error);
         }
     }
 
@@ -822,1048 +2070,914 @@ function stopSpeaking() {
         try {
             window.speechSynthesis.cancel();
         } catch (error) {
-            console.warn(error);
+            console.warn("Browser speech stop failed:", error);
         }
     }
 
-    isSpeaking = false;
-    setReadyState();
+    setVoiceStatus("VOICE STOPPED");
 }
 
-// ==========================================
-// 18. SPEECH RECOGNITION
-// ==========================================
 
-function startListening(language) {
+// ------------------------------------------------------------
+// 4. START LISTENING
+// FIX 3 — AUTO PROCESS VOICE COMMAND
+// ------------------------------------------------------------
+
+function startPowninListening() {
+    if (isListening) {
+        return false;
+    }
+
     const bridge = getPowninAndroidBridge();
 
-    const activeLanguage =
-        language || selectedLanguage;
-
-    const languageCode =
-        activeLanguage === "auto"
-            ? getLanguageCode(lastDetectedLanguage)
-            : getLanguageCode(activeLanguage);
-
-    if (
-        bridge &&
-        typeof bridge.startListening === "function"
-    ) {
+    // Native Android speech recognition.
+    if (bridge && typeof bridge.startListening === "function") {
         try {
-            isListening = true;
-            setAssistantState("LISTENING");
-            setStatus("LISTENING...");
+            const result = bridge.startListening(
+                normalizePowninLanguage(selectedLanguage)
+            );
 
-            bridge.startListening(languageCode);
-            return;
-
+            if (result !== false) {
+                isListening = true;
+                setStatus("Listening...");
+                setVoiceStatus("LISTENING");
+                return true;
+            }
         } catch (error) {
-            console.error("Native listening error:", error);
-            isListening = false;
+            console.warn("Native speech recognition failed:", error);
         }
     }
 
-    // Browser fallback.
-    const SpeechRecognition =
+    // Browser speech recognition fallback.
+    const Recognition =
         window.SpeechRecognition ||
         window.webkitSpeechRecognition;
 
-    if (!SpeechRecognition) {
-        setStatus("Speech recognition is not supported.");
-        setReadyState();
-        return;
+    if (!Recognition) {
+        setStatus("Speech recognition is unavailable.", true);
+        return false;
     }
 
     try {
-        if (window.powninRecognition) {
-            try {
-                window.powninRecognition.stop();
-            } catch (error) {
-                // Previous recognition may already be stopped.
-            }
-        }
+        const recognition = new Recognition();
 
-        const recognition = new SpeechRecognition();
-
-        recognition.lang = languageCode;
+        recognition.lang = normalizePowninLanguage(selectedLanguage);
         recognition.continuous = false;
         recognition.interimResults = false;
         recognition.maxAlternatives = 1;
 
+        window.powninBrowserRecognition = recognition;
+
         recognition.onstart = function () {
             isListening = true;
-            setAssistantState("LISTENING");
-            setStatus("LISTENING...");
+            setStatus("Listening...");
+            setVoiceStatus("LISTENING");
         };
 
         recognition.onresult = function (event) {
-            const result =
+            const transcript =
                 event.results &&
                 event.results[0] &&
-                event.results[0][0];
+                event.results[0][0]
+                    ? String(event.results[0][0].transcript || "").trim()
+                    : "";
 
-            if (result && result.transcript) {
-                if (input) {
-                    input.value = result.transcript;
-                }
-
-                sendMessage(result.transcript);
+            if (!transcript) {
+                setStatus("No speech detected.", true);
+                return;
             }
+
+            if (commandInput) {
+                commandInput.value = transcript;
+                updatePowninCharacterCount();
+            }
+
+            // Automatically process recognized speech.
+            processCommand(transcript);
         };
 
         recognition.onerror = function (event) {
-            console.warn(
-                "Speech recognition error:",
-                event.error
-            );
-
+            console.warn("Speech recognition error:", event.error);
             isListening = false;
-            setStatus("Voice recognition error.");
-            setReadyState();
+            setVoiceStatus("READY");
+            setStatus("Speech recognition error: " + event.error, true);
         };
 
         recognition.onend = function () {
             isListening = false;
-            setReadyState();
+            setVoiceStatus("READY");
         };
 
-        window.powninRecognition = recognition;
         recognition.start();
+        return true;
 
     } catch (error) {
-        console.error("Recognition start error:", error);
         isListening = false;
-        setStatus("Could not start voice recognition.");
-        setReadyState();
+        setVoiceStatus("READY");
+        setStatus("Could not start listening.", true);
+        console.warn(error);
+        return false;
     }
 }
 
-// ==========================================
-// 19. STOP LISTENING
-// ==========================================
+// ------------------------------------------------------------
+// 5. STOP LISTENING
+// ------------------------------------------------------------
 
-function stopListening() {
+function stopPowninListening() {
     const bridge = getPowninAndroidBridge();
 
-    if (
-        bridge &&
-        typeof bridge.stopListening === "function"
-    ) {
+    if (bridge && typeof bridge.stopListening === "function") {
         try {
             bridge.stopListening();
         } catch (error) {
-            console.warn(error);
+            console.warn("Native listening stop failed:", error);
         }
     }
 
-    if (window.powninRecognition) {
+    const recognition = window.powninBrowserRecognition;
+
+    if (recognition) {
         try {
-            window.powninRecognition.stop();
+            recognition.stop();
         } catch (error) {
-            console.warn(error);
+            console.warn("Browser listening stop failed:", error);
         }
+
+        window.powninBrowserRecognition = null;
     }
 
     isListening = false;
-    setReadyState();
+    setVoiceStatus("READY");
 }
 
-// ==========================================
-// 20. APP CONTROL
-// ==========================================
-
-const POWNIN_APP_COMMANDS = {
-    youtube: [
-        "youtube",
-        "open youtube",
-        "খুলে দাও ইউটিউব",
-        "यूट्यूब खोलो"
-    ],
-
-    chrome: [
-        "chrome",
-        "open chrome",
-        "খোলো ক্রোম",
-        "क्रोम खोलो"
-    ],
-
-    whatsapp: [
-        "whatsapp",
-        "open whatsapp",
-        "হোয়াটসঅ্যাপ খোলো",
-        "व्हाट्सएप खोलो"
-    ],
-
-    maps: [
-        "maps",
-        "google maps",
-        "open maps",
-        "ম্যাপ খোলো",
-        "मैप खोलो"
-    ],
-
-    settings: [
-        "settings",
-        "open settings",
-        "সেটিংস খোলো",
-        "सेटिंग्स खोलो"
-    ],
-
-    camera: [
-        "camera",
-        "open camera",
-        "ক্যামেরা খোলো",
-        "कैमरा खोलो"
-    ],
-
-    calculator: [
-        "calculator",
-        "open calculator",
-        "ক্যালকুলেটর খোলো",
-        "कैलकुलेटर खोलो"
-    ],
-
-    phone: [
-        "phone",
-        "open phone",
-        "dialer",
-        "ফোন খোলো",
-        "फोन खोलो"
-    ],
-
-    files: [
-        "files",
-        "file manager",
-        "open files",
-        "ফাইল খোলো",
-        "फाइल खोलो"
-    ]
-};
-
-function findAppCommand(command) {
-    const text = normalizeText(command);
-
-    for (const appName of Object.keys(POWNIN_APP_COMMANDS)) {
-        const phrases = POWNIN_APP_COMMANDS[appName];
-
-        for (const phrase of phrases) {
-            if (text === normalizeText(phrase)) {
-                return appName;
-            }
-        }
-    }
-
-    return null;
-}
-
-function handleAppCommand(command) {
-    const appName = findAppCommand(command);
-
-    if (!appName) return null;
-
-    const bridge = getPowninAndroidBridge();
-
-    if (
-        !bridge ||
-        typeof bridge.openApp !== "function"
-    ) {
-        return getReply(
-            getActiveLanguage(command),
-            "App control is not connected to Android yet.",
-            "Android App Control এখনো সংযুক্ত হয়নি।",
-            "Android App Control अभी कनेक्ट नहीं है।"
-        );
-    }
-
-    try {
-        bridge.openApp(appName);
-
-        return getReply(
-            getActiveLanguage(command),
-            "Opening " + appName + ".",
-            appName + " খোলার চেষ্টা করছি।",
-            appName + " खोलने की कोशिश कर रहा हूँ।"
-        );
-
-    } catch (error) {
-        console.error("App launch error:", error);
-
-        return getReply(
-            getActiveLanguage(command),
-            "I could not open that app.",
-            "অ্যাপটি খুলতে পারলাম না।",
-            "मैं वह ऐप नहीं खोल पाया।"
-        );
-    }
-}
-
-// ==========================================
-// 21. MEDIA CONTROL INTERFACE
-// ==========================================
-
-function handleMediaCommand(command) {
-    const text = normalizeText(command);
-
-    let action = null;
-
-    if (
-        text === "play music" ||
-        text === "play" ||
-        text === "গান চালাও" ||
-        text === "गाना चलाओ"
-    ) {
-        action = "play";
-    } else if (
-        text === "pause music" ||
-        text === "pause" ||
-        text === "গান থামাও" ||
-        text === "गाना रोक दो"
-    ) {
-        action = "pause";
-    } else if (
-        text === "next song" ||
-        text === "next track" ||
-        text === "পরের গান" ||
-        text === "अगला गाना"
-    ) {
-        action = "next";
-    } else if (
-        text === "previous song" ||
-        text === "আগের গান" ||
-        text === "पिछला गाना"
-    ) {
-        action = "previous";
-    }
-
-    if (!action) return null;
-
-    const result =
-        callAndroidMethod("mediaControl", action);
-
-    const language = getActiveLanguage(command);
-
-    if (!result.success) {
-        return getReply(
-            language,
-            "Media control is not connected yet.",
-            "Media Control-এর Android অংশ এখনো তৈরি হয়নি।",
-            "Media Control का Android हिस्सा अभी तैयार नहीं है।"
-        );
-    }
-
-    return getReply(
-        language,
-        "Media command sent.",
-        "Media command পাঠানো হয়েছে।",
-        "Media command भेज दिया गया है।"
-    );
-}
-
-// ==========================================
-// 22. CALL INTEGRATION — SAFE DIALER ONLY
-// ==========================================
-
-function handleCallCommand(command) {
-    const text = normalizeText(command);
-
-    const callPhrases = [
-        "open dialer",
-        "open phone dialer",
-        "ফোন ডায়ালার খোলো",
-        "डायलर खोलो"
-    ];
-
-    if (!callPhrases.includes(text)) {
-        return null;
-    }
-
-    const result = callAndroidMethod("openDialer");
-
-    const language = getActiveLanguage(command);
-
-    if (!result.success) {
-        return getReply(
-            language,
-            "Phone dialer integration is not available yet.",
-            "Phone Dialer integration এখনো তৈরি হয়নি।",
-            "Phone Dialer integration अभी उपलब्ध नहीं है।"
-        );
-    }
-
-    return getReply(
-        language,
-        "Opening the phone dialer. You can review the number before calling.",
-        "Phone Dialer খুলছি। কল করার আগে নম্বর দেখে নেবে।",
-        "Phone Dialer खोल रहा हूँ। कॉल करने से पहले नंबर जाँच लें।"
-    );
-}
-
-// ==========================================
-// 23. NOTIFICATION FEATURE STATUS
-// ==========================================
-
-function getNotificationFeatureStatus() {
-    const result =
-        callAndroidMethod("isNotificationAccessEnabled");
-
-    if (!result.success) {
-        return {
-            available: false,
-            enabled: false
-        };
-    }
-
-    return {
-        available: true,
-        enabled: result.result === true
-    };
-}
-
-function handleNotificationCommand(command) {
-    const text = normalizeText(command);
-
-    const notificationWords = [
-        "read notifications",
-        "check notifications",
-        "নোটিফিকেশন পড়ো",
-        "নোটিফিকেশন দেখাও",
-        "नोटिफिकेशन पढ़ो",
-        "नोटिफिकेशन दिखाओ"
-    ];
-
-    if (!notificationWords.includes(text)) {
-        return null;
-    }
-
-    const language = getActiveLanguage(command);
-    const status = getNotificationFeatureStatus();
-
-    if (!status.available) {
-        return getReply(
-            language,
-            "Notification access is not integrated yet.",
-            "Notification Access-এর Android service এখনো যোগ করা হয়নি।",
-            "Notification Access की Android service अभी नहीं जोड़ी गई है।"
-        );
-    }
-
-    if (!status.enabled) {
-        return getReply(
-            language,
-            "Please enable notification access in Android settings.",
-            "Android Settings থেকে Notification Access অনুমতি চালু করতে হবে।",
-            "Android Settings में Notification Access की अनुमति चालू करनी होगी।"
-        );
-    }
-
-    const result = callAndroidMethod("readNotifications");
-
-    if (!result.success) {
-        return getReply(
-            language,
-            "Could not read notifications.",
-            "নোটিফিকেশন পড়তে পারলাম না।",
-            "नोटिफिकेशन पढ़ नहीं पाया।"
-        );
-    }
-
-    return String(result.result || "");
-}
-
-// ==========================================
-// 24. NATIVE SPEECH CALLBACKS
-// ==========================================
+// ------------------------------------------------------------
+// 6. NATIVE SPEECH CALLBACKS
+// Called by Android if the bridge invokes these functions.
+// ------------------------------------------------------------
 
 window.onNativeSpeechResult = function (text) {
-    isListening = false;
-
     const transcript = String(text || "").trim();
 
-    setReadyState();
+    isListening = false;
+    setVoiceStatus("READY");
 
-    if (!transcript) return;
-
-    if (input) {
-        input.value = transcript;
+    if (!transcript || !commandInput) {
+        return;
     }
 
-    sendMessage(transcript);
+    commandInput.value = transcript;
+    updatePowninCharacterCount();
+
+    setStatus("Speech recognized.");
 };
 
 window.onNativeSpeechError = function (error) {
     isListening = false;
+    setVoiceStatus("VOICE ERROR");
 
-    console.warn("Native speech error:", error);
+    const message = String(error || "Unknown speech error");
 
-    setStatus("Voice recognition error.");
-    setReadyState();
+    setStatus("Speech recognition error: " + message, true);
 };
 
-window.onNativeAppError = function (error) {
-    console.warn("Native app error:", error);
+// ------------------------------------------------------------
+// 7. NOTE COMMAND DETECTION
+// ------------------------------------------------------------
 
-    setStatus(
-        String(error || "Android app operation failed.")
-    );
+function detectPowninNoteAction(command) {
+    const text = String(command || "").trim();
 
-    setReadyState();
-};
-
-window.onNativeTtsDone = function () {
-    isSpeaking = false;
-    setReadyState();
-};
-
-// ==========================================
-// PART 2 END
-// APPEND PART 3 BELOW THIS LINE
-// ==========================================
-
-
-/* =========================================================
-   POWNIN SMART BRAIN v4.0
-   PART 3/3 — ADVANCED ROUTER + AI + UI + INITIALIZATION
-   ========================================================= */
-
-// ==========================================
-// 25. ONLINE AI CONFIGURATION
-// ==========================================
-
-// IMPORTANT:
-// Do not put private API keys inside this Android app.
-// Configure a secure backend endpoint when one is available.
-
-const POWNIN_AI_ENDPOINT = "";
-
-async function getOnlineReply(command, language) {
-    if (!POWNIN_AI_ENDPOINT) {
-        return getReply(
-            language,
-            "Online AI is not configured yet. I can still help with offline commands.",
-            "Online AI এখনো সংযুক্ত করা হয়নি। তবে Offline Command দিয়ে সাহায্য করতে পারি।",
-            "Online AI अभी कनेक्ट नहीं है। लेकिन Offline Command से मदद कर सकता हूँ।"
-        );
-    }
-
-    try {
-        const response = await fetch(POWNIN_AI_ENDPOINT, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                message: command,
-                language: language,
-                history: getRecentContext()
-            })
-        });
-
-        if (!response.ok) {
-            throw new Error("AI server returned " + response.status);
-        }
-
-        const data = await response.json();
-
-        if (
-            data &&
-            typeof data.reply === "string" &&
-            data.reply.trim()
-        ) {
-            return data.reply.trim();
-        }
-
-        throw new Error("Invalid AI response");
-
-    } catch (error) {
-        console.error("Online AI error:", error);
-
-        return getReply(
-            language,
-            "I could not connect to Online AI. Please try again later.",
-            "Online AI-এর সঙ্গে সংযোগ করা যাচ্ছে না। পরে আবার চেষ্টা করো।",
-            "Online AI से कनेक्शन नहीं हो पाया। बाद में फिर कोशिश करें।"
-        );
-    }
-}
-
-// ==========================================
-// 26. MODE SYSTEM
-// ==========================================
-
-function setPowninMode(mode) {
-    const allowedModes = [
-        "offline",
-        "online",
-        "hybrid"
+    const savePatterns = [
+        /^(save note|remember this|save this note)\s*[:,-]?\s*(.+)$/i,
+        /^নোট লেখো\s+(.+)$/i,
+        /^নোট সেভ করো\s+(.+)$/i,
+        /^মনে রাখো\s+(.+)$/i,
+        /^নোট সংরক্ষণ করো\s+(.+)$/i,
+        /^note save koro\s+(.+)$/i,
+        /^eta mone rakho\s+(.+)$/i,
+        /^yaad rakho\s+(.+)$/i,
+        /^नोट सेव करो\s+(.+)$/i,
+        /^याद रखो\s+(.+)$/i
     ];
 
-    if (!allowedModes.includes(mode)) {
-        return false;
-    }
+    for (const pattern of savePatterns) {
+        const match = text.match(pattern);
 
-    currentMode = mode;
-    saveSettings();
-
-    if (modeLabel) {
-        modeLabel.textContent =
-            mode.toUpperCase();
-    }
-
-    Object.keys(modeButtons).forEach(function (key) {
-        const button = modeButtons[key];
-
-        if (button) {
-            button.classList.toggle(
-                "active",
-                key === mode
-            );
+        if (match) {
+            return {
+                action: "save",
+                text: match[match.length - 1].trim()
+            };
         }
-    });
-
-    setStatus(mode.toUpperCase() + " MODE ENABLED");
-
-    return true;
-}
-
-function handleModeCommand(command, language) {
-    const text = normalizeText(command);
-
-    if (
-        text === "offline mode" ||
-        text === "অফলাইন মোড" ||
-        text === "ऑफलाइन मोड"
-    ) {
-        setPowninMode("offline");
-
-        return getReply(
-            language,
-            "Offline mode enabled.",
-            "Offline Mode চালু হয়েছে।",
-            "Offline Mode चालू हो गया है।"
-        );
     }
 
     if (
-        text === "online mode" ||
-        text === "অনলাইন মোড" ||
-        text === "ऑनलाइन मोड"
+        /^(show notes|read notes|my notes|list notes)$/i.test(text) ||
+        /নোট দেখাও|আমার নোট দেখাও/.test(text) ||
+        /নোটস দেখাও|নোট পড়ে শোনাও/.test(text) ||
+        /नोट्स दिखाओ|मेरे नोट दिखाओ/.test(text)
     ) {
-        setPowninMode("online");
-
-        return getReply(
-            language,
-            "Online mode enabled.",
-            "Online Mode চালু হয়েছে।",
-            "Online Mode चालू हो गया है।"
-        );
+        return {
+            action: "show"
+        };
     }
 
     if (
-        text === "hybrid mode" ||
-        text === "হাইব্রিড মোড" ||
-        text === "हाइब्रिड मोड"
+        /^(clear notes|delete notes|remove all notes)$/i.test(text) ||
+        /সব নোট মুছে ফেলো|নোট মুছে ফেলো/.test(text) ||
+        /सभी नोट हटाओ|नोट मिटा दो/.test(text)
     ) {
-        setPowninMode("hybrid");
-
-        return getReply(
-            language,
-            "Hybrid mode enabled.",
-            "Hybrid Mode চালু হয়েছে।",
-            "Hybrid Mode चालू हो गया है।"
-        );
+        return {
+            action: "clear"
+        };
     }
 
     return null;
 }
 
-// ==========================================
-// 27. STOP COMMANDS
-// ==========================================
+// ------------------------------------------------------------
+// 8. PROCESS NOTE COMMAND
+// ------------------------------------------------------------
 
-function handleStopCommand(command, language) {
-    const text = normalizeText(command);
+function processPowninNoteCommand(command, language) {
+    const lang = normalizePowninLanguage(language);
+    const noteCommand = detectPowninNoteAction(command);
 
-    const stopCommands = [
+    if (!noteCommand) {
+        return {
+            handled: false
+        };
+    }
+
+    if (noteCommand.action === "save") {
+        if (!noteCommand.text) {
+            return {
+                handled: true,
+                reply: getPowninText("empty", lang)
+            };
+        }
+
+        if (noteCommand.text.length > MAX_NOTE_LENGTH) {
+            return {
+                handled: true,
+                reply: getPowninText("tooLong", lang)
+            };
+        }
+
+        const saved = savePowninNote(noteCommand.text);
+
+        return {
+            handled: true,
+            reply: saved
+                ? getPowninText("saved", lang)
+                : getPowninText("unknown", lang)
+        };
+    }
+
+    if (noteCommand.action === "show") {
+        return {
+            handled: true,
+            reply: formatPowninNotes(lang)
+        };
+    }
+
+    if (noteCommand.action === "clear") {
+        const cleared = clearPowninNotes();
+
+        return {
+            handled: true,
+            reply: cleared
+                ? getPowninText("notesCleared", lang)
+                : getPowninText("unknown", lang)
+        };
+    }
+
+    return {
+        handled: false
+    };
+}
+
+// ------------------------------------------------------------
+// END OF PART 6/8
+// ============================================================
+
+// ============================================================
+// POWNIN SMART BRAIN v5.3
+// PART 7/8 — COMMAND ROUTER, STOP/CANCEL & COMMAND PROCESSING
+// ============================================================
+
+// ------------------------------------------------------------
+// 1. STOP COMMAND DETECTION
+// Only "stop" and "exit" are stop commands.
+// ------------------------------------------------------------
+
+function isPowninStopCommand(command) {
+    const text = normalizePowninText(command);
+
+    return [
         "stop",
         "exit",
-        "stop voice",
-        "stop speaking",
-        "voice stop",
-        "বন্ধ করো",
         "থামো",
-        "आवाज़ बंद करो",
-        "रुको"
-    ];
+        "বন্ধ করো",
+        "বন্ধ কর",
+        "रुको",
+        "बंद करो"
+    ].includes(text);
+}
 
-    if (!stopCommands.includes(text)) {
-        return null;
-    }
+// ------------------------------------------------------------
+// 2. CANCEL CURRENT PROCESSING
+// ------------------------------------------------------------
 
+function cancelPowninProcessing() {
+    // Invalidate the current command.
+    powninCommandToken++;
+
+    // Stop any active online request.
+    abortPowninOnlineRequest();
+
+    // Stop voice output and input.
     stopSpeaking();
-    stopListening();
+    stopPowninListening();
 
-    return getReply(
-        language,
-        "Stopped.",
-        "বন্ধ করা হয়েছে।",
-        "रोक दिया गया है।"
-    );
+    isProcessing = false;
+
+    setStatus("Command cancelled.");
 }
 
-// ==========================================
-// 28. CLEAR CHAT COMMAND
-// ==========================================
+// ------------------------------------------------------------
+// 3. STOP COMMAND RESPONSE
+// ------------------------------------------------------------
 
-function handleClearCommand(command, language) {
-    const text = normalizeText(command);
+function getPowninStopReply(language) {
+    const lang = normalizePowninLanguage(language);
 
-    const clearCommands = [
-        "clear chat",
-        "clear history",
-        "delete chat",
-        "চ্যাট পরিষ্কার করো",
-        "চ্যাট মুছে দাও",
-        "चैट साफ करो",
-        "चैट हटाओ"
-    ];
-
-    if (!clearCommands.includes(text)) {
-        return null;
+    if (lang === "bn-IN") {
+        return "ঠিক আছে। Pownin থেমে গেছে।";
     }
 
-    clearConversation();
+    if (lang === "hi-IN") {
+        return "ठीक है। Pownin रुक गया है।";
+    }
 
-    return getReply(
-        language,
-        "Chat cleared.",
-        "চ্যাট পরিষ্কার করা হয়েছে।",
-        "चैट साफ कर दी गई है।"
-    );
+    return "Okay. Pownin has stopped.";
 }
 
-// ==========================================
-// 29. COMMAND ROUTER
-// ==========================================
+// ------------------------------------------------------------
+// 4. PROCESS SPECIAL COMMANDS
+// FIX 1 — SETTINGS ROUTING PRIORITY
+// ------------------------------------------------------------
+
+function processPowninSpecialCommand(command, language) {
+    const lang = normalizePowninLanguage(language);
+
+    // 1. Notes.
+    const noteResult = processPowninNoteCommand(command, lang);
+
+    if (noteResult.handled) {
+        return noteResult;
+    }
+
+    // 2. Device settings — check BEFORE app control.
+    if (isPowninSettingsCommand(command)) {
+        return processPowninSettingsCommand(lang);
+    }
+
+    // 3. Open supported apps.
+    if (isPowninOpenAppCommand(command)) {
+        return processPowninOpenAppCommand(command, lang);
+    }
+
+    // 4. Volume control.
+    const volumeAction = detectPowninVolumeAction(command);
+
+    if (volumeAction) {
+        return processPowninVolumeCommand(volumeAction, lang);
+    }
+
+    // 5. Voice style.
+    const voiceStyle = detectPowninVoiceStyle(command);
+
+    if (voiceStyle) {
+        return processPowninVoiceStyleCommand(voiceStyle, lang);
+    }
+
+    // 6. Voice language.
+    const voiceLanguage = detectPowninVoiceLanguage(command);
+
+    if (voiceLanguage) {
+        return processPowninVoiceLanguageCommand(voiceLanguage);
+    }
+
+    return {
+        handled: false
+    };
+}
+
+// ------------------------------------------------------------
+// 5. OFFLINE COMMAND ROUTER
+// ------------------------------------------------------------
+
+function runPowninOfflineCommand(command, language) {
+    const lang = normalizePowninLanguage(language);
+
+    const specialResult = processPowninSpecialCommand(
+        command,
+        lang
+    );
+
+    if (specialResult.handled) {
+        return specialResult.reply;
+    }
+
+    return getPowninOfflineReply(command, lang);
+}
+
+// ------------------------------------------------------------
+// 6. PROCESS ONE COMMAND
+// ------------------------------------------------------------
 
 async function processCommand(rawCommand) {
     const command = String(rawCommand || "").trim();
 
     if (!command) {
-        setStatus("Please enter a command.");
+        setStatus(getPowninText("empty"));
         return;
     }
 
     if (command.length > MAX_COMMAND_LENGTH) {
-        const language = getActiveLanguage(command);
-
-        showBotMessage(
-            getReply(
-                language,
-                "That message is too long.",
-                "মেসেজটি অনেক বড়।",
-                "यह संदेश बहुत लंबा है।"
-            )
-        );
-
+        setStatus(getPowninText("tooLong"), true);
         return;
     }
 
+    // Stop must be handled even when another command is running.
+    if (isPowninStopCommand(command)) {
+        const language = detectPowninLanguage(command);
+
+        cancelPowninProcessing();
+
+        showUserMessage(command);
+
+        const reply = getPowninStopReply(language);
+
+        // Do not speak the stop response.
+        showReply(reply);
+
+        setStatus("Stopped.");
+        return;
+    }
+
+    // Ignore a new command while another one is processing.
     if (isProcessing) {
+        setStatus("Please wait. Pownin is processing the previous command.");
         return;
     }
 
-    const language = getActiveLanguage(command);
-    lastDetectedLanguage = language;
+    const token = ++powninCommandToken;
 
-    isProcessing = true;
+    const language = detectPowninLanguage(command);
+
+    lastUserCommand = command;
+    selectedLanguage = language;
+
+    if (languageSelect) {
+        languageSelect.value = language;
+    }
 
     showUserMessage(command);
-    saveConversation("user", command);
 
-    setAssistantState("THINKING");
-    setStatus("PROCESSING...");
+    isProcessing = true;
+    setStatus("Pownin is thinking...");
 
     try {
-        // 1. Stop commands
-        const stopReply =
-            handleStopCommand(command, language);
+        // First check local/device commands.
+        const specialResult = processPowninSpecialCommand(
+            command,
+            language
+        );
 
-        if (stopReply !== null) {
-            showBotMessage(stopReply);
-            saveConversation("assistant", stopReply);
-            speakReply(stopReply, language);
-            return;
-        }
-
-        // 2. Clear chat
-        const clearReply =
-            handleClearCommand(command, language);
-
-        if (clearReply !== null) {
-            speakReply(clearReply, language);
-            return;
-        }
-
-        // 3. Mode commands
-        const modeReply =
-            handleModeCommand(command, language);
-
-        if (modeReply !== null) {
-            showBotMessage(modeReply);
-            saveConversation("assistant", modeReply);
-            speakReply(modeReply, language);
-            return;
-        }
-
-        // 4. App commands
-        const appReply =
-            handleAppCommand(command);
-
-        if (appReply !== null) {
-            showBotMessage(appReply);
-            saveConversation("assistant", appReply);
-            speakReply(appReply, language);
-            return;
-        }
-
-        // 5. Media commands
-        const mediaReply =
-            handleMediaCommand(command);
-
-        if (mediaReply !== null) {
-            showBotMessage(mediaReply);
-            saveConversation("assistant", mediaReply);
-            speakReply(mediaReply, language);
-            return;
-        }
-
-        // 6. Safe phone dialer command
-        const callReply =
-            handleCallCommand(command);
-
-        if (callReply !== null) {
-            showBotMessage(callReply);
-            saveConversation("assistant", callReply);
-            speakReply(callReply, language);
-            return;
-        }
-
-        // 7. Notification commands
-        const notificationReply =
-            handleNotificationCommand(command);
-
-        if (notificationReply !== null) {
-            showBotMessage(notificationReply);
-            saveConversation("assistant", notificationReply);
-            speakReply(notificationReply, language);
-            return;
-        }
-
-        // 8. Offline mode
-        if (currentMode === "offline") {
-            const reply = getOfflineReply(command);
-
-            showBotMessage(reply);
-            saveConversation("assistant", reply);
-            speakReply(reply, language);
-
-            return;
-        }
-
-        // 9. ONLINE / HYBRID MODE
-
-        if (currentMode === "online") {
-            const onlineReply =
-                await getOnlineReply(command, language);
-
-            showBotMessage(onlineReply);
-            saveConversation("assistant", onlineReply);
-            speakReply(onlineReply, language);
-
-            return;
-        }
-
-        if (currentMode === "hybrid") {
-            let onlineReply = null;
-
-            try {
-                onlineReply =
-                    await getOnlineReply(command, language);
-            } catch (error) {
-                console.warn(
-                    "Online AI unavailable. Using offline brain.",
-                    error
-                );
+        if (specialResult.handled) {
+            if (token !== powninCommandToken) {
+                return;
             }
 
-            if (
-                onlineReply &&
-                !onlineReply.includes("not configured") &&
-                !onlineReply.includes("unavailable") &&
-                !onlineReply.includes("could not connect")
-            ) {
-                showBotMessage(onlineReply);
-                saveConversation("assistant", onlineReply);
-                speakReply(onlineReply, language);
-            } else {
-                const offlineReply =
-                    getOfflineReply(command);
+            showReply(specialResult.reply, {
+                speak: true
+            });
 
-                showBotMessage(offlineReply);
-                saveConversation("assistant", offlineReply);
-                speakReply(offlineReply, language);
-            }
-
+            setStatus("Ready.");
             return;
         }
-// ==========================================
-// 30. SEND MESSAGE
-// ==========================================
 
-function sendMessage(optionalText) {
-    const command = String(
-        optionalText !== undefined
-            ? optionalText
-            : input
-                ? input.value
-                : ""
-    ).trim();
+        // Then use the selected brain mode.
+        const reply = await getPowninSmartReply(
+            command,
+            language,
+            token
+        );
 
-    if (!command) return;
+        // Ignore replies from cancelled or older requests.
+        if (token !== powninCommandToken) {
+            return;
+        }
 
-    if (input && optionalText === undefined) {
-        input.value = "";
+        if (reply) {
+            showReply(reply, {
+                speak: true
+            });
+
+            setStatus("Ready.");
+        }
+
+    } catch (error) {
+        if (token !== powninCommandToken) {
+            return;
+        }
+
+        console.error("Pownin command error:", error);
+
+        const lang = normalizePowninLanguage(language);
+
+        let errorReply;
+
+        if (lang === "bn-IN") {
+            errorReply = "দুঃখিত, কমান্ডটি সম্পন্ন করতে সমস্যা হয়েছে।";
+        } else if (lang === "hi-IN") {
+            errorReply = "क्षमा करें, कमांड पूरा करने में समस्या हुई।";
+        } else {
+            errorReply = "Sorry, I couldn't complete that command.";
+        }
+
+        showReply(errorReply, {
+            speak: true
+        });
+
+        setStatus(getPowninErrorMessage(error), true);
+
+    } finally {
+        // Only the active command may reset processing state.
+        if (token === powninCommandToken) {
+            isProcessing = false;
+        }
     }
+}
+
+// ------------------------------------------------------------
+// 7. COMMAND INPUT HELPER
+// ------------------------------------------------------------
+
+function submitPowninCommand() {
+    if (!commandInput) {
+        return;
+    }
+
+    const command = commandInput.value.trim();
+
+    if (!command) {
+        setStatus(getPowninText("empty"));
+        return;
+    }
+
+    commandInput.value = "";
+    updatePowninCharacterCount();
 
     processCommand(command);
 }
 
-// ==========================================
-// 31. BUTTON EVENTS
-// ==========================================
+// ------------------------------------------------------------
+// 8. MANUAL CANCEL HELPER
+// ------------------------------------------------------------
 
-function initializeEventListeners() {
-    if (sendBtn) {
-        sendBtn.addEventListener("click", function () {
-            sendMessage();
+function stopPowninEverything() {
+    cancelPowninProcessing();
+
+    setStatus("Pownin stopped.");
+}
+
+// ------------------------------------------------------------
+// END OF PART 7/8
+// ============================================================
+
+// ============================================================
+// POWNIN SMART BRAIN v5.3
+// PART 8/8 — EVENTS, SETTINGS & FINAL INITIALIZATION
+// ============================================================
+
+ // ------------------------------------------------------------
+ // 1. SEND BUTTON AND FORM EVENTS
+ // FIX 2 — SEND BUTTON + ENTER
+ // ------------------------------------------------------------
+
+function bindPowninCommandEvents() {
+
+    // Form submission (Enter key).
+    if (commandForm && !commandForm.dataset.powninBound) {
+        commandForm.dataset.powninBound = "true";
+
+        commandForm.addEventListener("submit", function (event) {
+            event.preventDefault();
+            submitPowninCommand();
         });
     }
 
-    if (input) {
-        input.addEventListener("keydown", function (event) {
-            if (event.key === "Enter" && !event.shiftKey) {
+    // Send button click.
+    if (sendBtn && !sendBtn.dataset.powninBound) {
+        sendBtn.dataset.powninBound = "true";
+
+        sendBtn.addEventListener("click", function (event) {
+            event.preventDefault();
+            event.stopPropagation();
+
+            submitPowninCommand();
+        });
+    }
+
+    // Input character count and Enter handling.
+    if (commandInput && !commandInput.dataset.powninBound) {
+        commandInput.dataset.powninBound = "true";
+
+        commandInput.addEventListener("input", function () {
+            updatePowninCharacterCount();
+        });
+
+        commandInput.addEventListener("keydown", function (event) {
+            if (
+                event.key === "Enter" &&
+                !event.shiftKey &&
+                !commandForm
+            ) {
                 event.preventDefault();
-                sendMessage();
+                submitPowninCommand();
             }
-        });
-    }
-
-    if (voiceBtn) {
-        voiceBtn.addEventListener("click", function () {
-            if (isListening) {
-                stopListening();
-            } else {
-                startListening(selectedLanguage);
-            }
-        });
-    }
-
-       const clearChatBtn = document.getElementById("clearChatBtn");
-
-    if (clearChatBtn) {
-        clearChatBtn.addEventListener("click", function () {
-            clearConversation();
-        });
-    }
-   
-    if (stopBtn) {
-        stopBtn.addEventListener("click", function () {
-            stopSpeaking();
-            stopListening();
-        });
-    }
-
-    if (modeButtons.offline) {
-        modeButtons.offline.addEventListener("click", function () {
-            setPowninMode("offline");
-        });
-    }
-
-    if (modeButtons.online) {
-        modeButtons.online.addEventListener("click", function () {
-            setPowninMode("online");
-        });
-    }
-
-    if (modeButtons.hybrid) {
-        modeButtons.hybrid.addEventListener("click", function () {
-            setPowninMode("hybrid");
         });
     }
 }
 
-// ==========================================
-// 32. INITIALIZATION
-// ==========================================
+// ------------------------------------------------------------
+// 2. VOICE BUTTON EVENTS
+// ------------------------------------------------------------
+
+function bindPowninVoiceEvents() {
+    if (micBtn && !micBtn.dataset.powninBound) {
+        micBtn.dataset.powninBound = "true";
+
+        micBtn.addEventListener("click", function () {
+            if (isListening) {
+                stopPowninListening();
+                setStatus("Listening stopped.");
+            } else {
+                startPowninListening();
+            }
+        });
+    }
+
+    if (speakBtn && !speakBtn.dataset.powninBound) {
+        speakBtn.dataset.powninBound = "true";
+
+        speakBtn.addEventListener("click", function () {
+            if (lastReply) {
+                speak(lastReply);
+            } else {
+                setStatus("There is no reply to speak yet.");
+            }
+        });
+    }
+
+    if (stopSpeakBtn && !stopSpeakBtn.dataset.powninBound) {
+        stopSpeakBtn.dataset.powninBound = "true";
+
+        stopSpeakBtn.addEventListener("click", function () {
+            stopPowninEverything();
+        });
+    }
+}
+
+// ------------------------------------------------------------
+// 3. CHAT CLEAR EVENT
+// ------------------------------------------------------------
+
+function bindPowninChatEvents() {
+    if (clearChatBtn && !clearChatBtn.dataset.powninBound) {
+        clearChatBtn.dataset.powninBound = "true";
+
+        clearChatBtn.addEventListener("click", function () {
+            cancelPowninProcessing();
+            clearChat();
+        });
+    }
+}
+
+// ------------------------------------------------------------
+// 4. MODE AND LANGUAGE EVENTS
+// ------------------------------------------------------------
+
+function bindPowninModeEvents() {
+    if (modeSelect && !modeSelect.dataset.powninBound) {
+        modeSelect.dataset.powninBound = "true";
+
+        modeSelect.addEventListener("change", function () {
+            const changed = setPowninMode(modeSelect.value);
+
+            if (changed) {
+                setStatus("Pownin mode changed.");
+            }
+        });
+    }
+
+    if (languageSelect && !languageSelect.dataset.powninBound) {
+        languageSelect.dataset.powninBound = "true";
+
+        languageSelect.addEventListener("change", function () {
+            selectedLanguage = normalizePowninLanguage(
+                languageSelect.value
+            );
+
+            callPowninAndroid("setTtsLanguage", [
+                selectedLanguage
+            ]);
+
+            setStatus("Voice language preference updated.");
+        });
+    }
+}
+
+// ------------------------------------------------------------
+// 5. SETTINGS PANEL EVENTS
+// ------------------------------------------------------------
+
+function bindPowninSettingsEvents() {
+    if (settingsBtn && !settingsBtn.dataset.powninBound) {
+        settingsBtn.dataset.powninBound = "true";
+
+        settingsBtn.addEventListener("click", function () {
+            if (!settingsPanel) {
+                return;
+            }
+
+            settingsPanel.hidden = false;
+            settingsPanel.classList.add("open");
+        });
+    }
+
+    if (closeSettingsBtn && !closeSettingsBtn.dataset.powninBound) {
+        closeSettingsBtn.dataset.powninBound = "true";
+
+        closeSettingsBtn.addEventListener("click", function () {
+            if (!settingsPanel) {
+                return;
+            }
+
+            settingsPanel.hidden = true;
+            settingsPanel.classList.remove("open");
+        });
+    }
+
+    if (clearKeyBtn && !clearKeyBtn.dataset.powninBound) {
+        clearKeyBtn.dataset.powninBound = "true";
+
+        clearKeyBtn.addEventListener("click", function () {
+            clearPowninApiKey();
+        });
+    }
+}
+
+// ------------------------------------------------------------
+// 6. NETWORK STATUS EVENTS
+// ------------------------------------------------------------
+
+function bindPowninNetworkEvents() {
+    window.addEventListener("online", function () {
+        setNetworkStatus(getPowninConnectionStatus());
+    });
+
+    window.addEventListener("offline", function () {
+        setNetworkStatus("OFFLINE");
+    });
+}
+
+// ------------------------------------------------------------
+// 7. SAVE MODE PREFERENCE
+// ------------------------------------------------------------
+
+function restorePowninMode() {
+    try {
+        const savedMode = localStorage.getItem(
+            "pownin_mode_v53"
+        );
+
+        if (
+            savedMode === "offline" ||
+            savedMode === "online" ||
+            savedMode === "hybrid"
+        ) {
+            setPowninMode(savedMode);
+        } else {
+            setPowninMode("hybrid");
+        }
+    } catch (error) {
+        console.warn("Could not restore Pownin mode:", error);
+        setPowninMode("hybrid");
+    }
+}
+
+function savePowninModePreference() {
+    try {
+        localStorage.setItem(
+            "pownin_mode_v53",
+            currentMode
+        );
+    } catch (error) {
+        console.warn("Could not save Pownin mode:", error);
+    }
+}
+
+// ------------------------------------------------------------
+// 8. MODE CHANGE STORAGE
+// ------------------------------------------------------------
+
+function bindPowninModeStorage() {
+    if (!modeSelect || modeSelect.dataset.powninStorageBound) {
+        return;
+    }
+
+    modeSelect.dataset.powninStorageBound = "true";
+
+    modeSelect.addEventListener("change", function () {
+        savePowninModePreference();
+    });
+}
+
+// ------------------------------------------------------------
+// 9. CLOCK INITIALIZATION
+// ------------------------------------------------------------
+
+function initializePowninClock() {
+    updatePowninClock();
+
+    // Prevent duplicate clock intervals.
+    if (window.powninClockInterval) {
+        clearInterval(window.powninClockInterval);
+    }
+
+    window.powninClockInterval = setInterval(
+        updatePowninClock,
+        30000
+    );
+}
+
+// ------------------------------------------------------------
+// 10. INITIALIZE ALL EVENTS
+// ------------------------------------------------------------
 
 function initializePownin() {
+    // Prevent duplicate initialization.
+    if (window.powninInitialized === true) {
+        return;
+    }
+
+    window.powninInitialized = true;
+
     try {
-        loadSettings();
-        loadConversationMemory();
+        bindPowninCommandEvents();
+        bindPowninVoiceEvents();
+        bindPowninChatEvents();
+        bindPowninModeEvents();
+        bindPowninSettingsEvents();
+        bindPowninNetworkEvents();
+        bindPowninModeStorage();
 
-        initializeEventListeners();
+        restorePowninMode();
 
-        setPowninMode(currentMode);
+        if (languageSelect) {
+            selectedLanguage = normalizePowninLanguage(
+                languageSelect.value || "en-IN"
+            );
+        }
 
-        setReadyState();
+        updatePowninCharacterCount();
+        initializePowninClock();
+
+        setNetworkStatus(getPowninConnectionStatus());
+        setVoiceStatus("READY");
+        setStatus("Pownin Smart Brain v5.3 ready.");
 
         console.log(
-            "PowNin Smart Brain v" +
-            POWNIN_VERSION +
-            " initialized."
+            "Pownin Smart Brain v" + POWNIN_VERSION + " initialized."
         );
-
-        const welcome = getReply(
-            lastDetectedLanguage,
-            "Hello! PowNin is ready.",
-            "হ্যালো! PowNin প্রস্তুত।",
-            "नमस्ते! PowNin तैयार है।"
-        );
-
-        showBotMessage(welcome);
 
     } catch (error) {
-        console.error("PowNin initialization error:", error);
-        setStatus("Initialization failed.");
+        window.powninInitialized = false;
+
+        console.error("Pownin initialization failed:", error);
+
+        setStatus("Pownin initialization failed.", true);
     }
 }
 
-// ==========================================
-// 33. GLOBAL ERROR HANDLING
-// ==========================================
-
-window.addEventListener("error", function (event) {
-    console.error(
-        "PowNin JavaScript error:",
-        event.message,
-        event.filename,
-        event.lineno
-    );
-});
-
-window.addEventListener(
-    "unhandledrejection",
-    function (event) {
-        console.error(
-            "PowNin async error:",
-            event.reason
-        );
-    }
-);
-
-// ==========================================
-// 34. START APPLICATION
-// ==========================================
+// ------------------------------------------------------------
+// 11. STARTUP
+// ------------------------------------------------------------
 
 if (document.readyState === "loading") {
     document.addEventListener(
@@ -1875,6 +2989,26 @@ if (document.readyState === "loading") {
     initializePownin();
 }
 
-// ==========================================
-// POWNIN SMART BRAIN v4.0 END
-// ==========================================
+// ------------------------------------------------------------
+// 12. GLOBAL ERROR HANDLING
+// ------------------------------------------------------------
+
+window.addEventListener("error", function (event) {
+    console.error(
+        "Pownin JavaScript error:",
+        event.message,
+        event.filename,
+        event.lineno
+    );
+});
+
+window.addEventListener("unhandledrejection", function (event) {
+    console.error(
+        "Pownin asynchronous error:",
+        event.reason
+    );
+});
+
+// ------------------------------------------------------------
+// END OF PART 8/8
+// ============================================================
