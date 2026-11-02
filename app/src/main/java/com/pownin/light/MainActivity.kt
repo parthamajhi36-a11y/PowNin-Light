@@ -2,6 +2,10 @@ package com.pownin.light
 
 import android.Manifest
 import android.content.Intent
+import android.Manifest
+import android.content.Intent
+import android.media.AudioManager
+import android.content.pm.PackageManager
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.provider.MediaStore
@@ -654,6 +658,52 @@ class MainActivity : ComponentActivity() {
             }
 
             return true
+        }
+
+        // ANDROID MEDIA VOLUME CONTROL
+
+        @JavascriptInterface
+        fun adjustVolume(action: String?): Boolean {
+            return try {
+                val audioManager =
+                    getSystemService(AudioManager::class.java)
+                        ?: return false
+
+                val stream = AudioManager.STREAM_MUSIC
+
+                when (action?.lowercase()) {
+                    "up" -> audioManager.adjustStreamVolume(
+                        stream,
+                        AudioManager.ADJUST_RAISE,
+                        AudioManager.FLAG_SHOW_UI
+                    )
+
+                    "down" -> audioManager.adjustStreamVolume(
+                        stream,
+                        AudioManager.ADJUST_LOWER,
+                        AudioManager.FLAG_SHOW_UI
+                    )
+
+                    "mute" -> audioManager.adjustStreamVolume(
+                        stream,
+                        AudioManager.ADJUST_MUTE,
+                        AudioManager.FLAG_SHOW_UI
+                    )
+
+                    "unmute" -> audioManager.adjustStreamVolume(
+                        stream,
+                        AudioManager.ADJUST_UNMUTE,
+                        AudioManager.FLAG_SHOW_UI
+                    )
+
+                    else -> return false
+                }
+
+                true
+
+            } catch (error: Exception) {
+                false
+            }
         }
 
         @JavascriptInterface
