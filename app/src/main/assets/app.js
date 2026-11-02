@@ -1089,6 +1089,7 @@ function getPowninAndroidBridge() {
     return null;
 }
 
+
 // ------------------------------------------------------------
 // 2. SAFE ANDROID METHOD CALL
 // ------------------------------------------------------------
@@ -1116,28 +1117,38 @@ function callPowninAndroid(methodName, args) {
             Array.isArray(args) ? args : []
         );
 
-        // Android bridge methods may return a status string.
-        if (
-            typeof result === "string" &&
-            /^(error|failed|not_found|app_not_found|unavailable)/i.test(result)
-        ) {
-            return {
-                success: false,
-                error: result
-            };
-        }
-
-        if (result === false) {
+        if (result === false || result == null) {
             return {
                 success: false,
                 error: "Android command was rejected."
             };
         }
 
+        if (typeof result === "string") {
+            const status = result.trim().toUpperCase();
+
+            const failureStatuses = [
+                "ERROR",
+                "FAILED",
+                "NOT_FOUND",
+                "APP_NOT_FOUND",
+                "INVALID_APP",
+                "UNAVAILABLE"
+            ];
+
+            if (failureStatuses.includes(status)) {
+                return {
+                    success: false,
+                    error: status
+                };
+            }
+        }
+
         return {
             success: true,
             result: result
         };
+
     } catch (error) {
         return {
             success: false,
