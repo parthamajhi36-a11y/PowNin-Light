@@ -371,34 +371,57 @@ function handleLanguageCommand(text, language) {
 // ==========================================
 
 function handleCalculation(command, language) {
-    if (
-        !window.PowninMath ||
-        typeof window.PowninMath.calculate !== "function"
-    ) {
+    const math = window.PowninMath;
+
+    if (!math) {
         return null;
     }
 
     try {
-        const result =
-            window.PowninMath.calculate(command);
+        // First try the advanced solver.
+        if (typeof math.solve === "function") {
+            const solved = math.solve(command);
 
-        if (
-            result === null ||
-            result === undefined ||
-            result === false
-        ) {
-            return null;
+            if (solved && solved.success === true) {
+                let answer = solved.answer;
+
+                if (Array.isArray(answer)) {
+                    answer = answer.join(", ");
+                }
+
+                if (answer === null || answer === undefined) {
+                    answer = "No real solution";
+                }
+
+                return getReply(
+                    language,
+                    "The answer is " + answer,
+                    "উত্তর হলো " + answer,
+                    "उत्तर है " + answer
+                );
+            }
         }
 
-        return getReply(
-            language,
-            "The answer is " + result,
-            "উত্তর হলো " + result,
-            "उत्तर है " + result
-        );
+        // Fallback to the basic calculator.
+        if (typeof math.calculate === "function") {
+            const result = math.calculate(command);
+
+            if (result !== null &&
+                result !== undefined &&
+                result !== false) {
+                return getReply(
+                    language,
+                    "The answer is " + result,
+                    "উত্তর হলো " + result,
+                    "उत्तर है " + result
+                );
+            }
+        }
+
+        return null;
 
     } catch (error) {
-        console.error("Calculator error:", error);
+        console.error("Pownin Math Error:", error);
         return null;
     }
 }
