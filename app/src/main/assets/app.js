@@ -2225,16 +2225,15 @@ function startPowninNativeListening() {
 
 // ------------------------------------------------------------
 // 3. NATIVE ANDROID SPEECH CALLBACKS
-// MainActivity can call these JavaScript functions.
+// Session-safe callbacks
 // ------------------------------------------------------------
 
 window.onNativeSpeechResult = function (recognizedText) {
     const text = String(recognizedText || "").trim();
 
-    isListening = false;
-    setVoiceStatus("READY");
-
     if (!text) {
+        isListening = false;
+        setVoiceStatus("READY");
         setStatus("No speech detected.", true);
         return;
     }
@@ -2243,6 +2242,15 @@ window.onNativeSpeechResult = function (recognizedText) {
         commandInput.value = text;
         updatePowninCharacterCount();
     }
+
+    // Keep listening state until Pause command is processed.
+    if (isPowninVoicePhrase(text, "pause")) {
+        processPowninCommand(text);
+        return;
+    }
+
+    isListening = false;
+    setVoiceStatus("READY");
 
     processPowninCommand(text);
 };
