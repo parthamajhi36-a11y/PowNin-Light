@@ -1768,6 +1768,24 @@ function displayPowninMessage(role, message) {
     chat.scrollTop = chat.scrollHeight;
 }
 
+// ------------------------------------------------------------
+// RESTORE PREVIOUS CHAT MESSAGES
+// ------------------------------------------------------------
+
+function restorePowninChatHistory() {
+    if (!chat) {
+        return;
+    }
+
+    chat.textContent = "";
+
+    const savedMessages = getPowninHistory();
+
+    savedMessages.forEach(function (item) {
+        displayPowninMessage(item.role, item.content);
+    });
+}
+
 /* =========================================================
    POWNIN SMART BRAIN v5.3
    PART 7/8 — COMMAND PROCESSING
