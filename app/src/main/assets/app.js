@@ -132,6 +132,65 @@ function normalizePowninDigits(text) {
         });
 }
 
+
+/* =========================================================
+   POWNIN VOICE PHRASE SYSTEM v1.0
+   English + Bengali + Hindi + Banglish
+   ========================================================= */
+
+const POWNIN_VOICE_PHRASES = {
+    stop: [
+        // English
+        "stop",
+        "stop speaking",
+        "stop voice",
+        "stop listening",
+        "cancel",
+        "be quiet",
+
+        // Bengali
+        "থামো",
+        "থাম",
+        "থামুন",
+        "থেমে যাও",
+        "বন্ধ করো",
+        "কথা বন্ধ করো",
+        "কথা থামাও",
+        "চুপ করো",
+
+        // Hindi
+        "रुको",
+        "रुक जाओ",
+        "रुकिए",
+        "बंद करो",
+        "बोलना बंद करो",
+        "चुप हो जाओ",
+
+        // Banglish
+        "thamo",
+        "tham",
+        "theme jao",
+        "bondho koro",
+        "kotha bondho koro",
+        "kotha thamাও",
+        "chup koro"
+    ]
+};
+
+// Check whether a command matches a voice phrase.
+function isPowninVoicePhrase(command, action) {
+    const normalizedCommand = normalizePowninText(command);
+    const phrases = POWNIN_VOICE_PHRASES[action];
+
+    if (!Array.isArray(phrases)) {
+        return false;
+    }
+
+    return phrases.some(function (phrase) {
+        return normalizePowninText(phrase) === normalizedCommand;
+    });
+}
+
 // ------------------------------------------------------------
 // 4. LANGUAGE DETECTION
 // Bengali, Hindi, English and Banglish support.
@@ -1819,9 +1878,9 @@ function deliverPowninReply(message, options) {
     setStatus("Ready", false);
 }
 
-
 // ------------------------------------------------------------
 // 4. PROCESS ONE USER COMMAND
+// SMART STOP SYSTEM v1.1
 // ------------------------------------------------------------
 
 async function processPowninCommand(rawCommand) {
@@ -1842,14 +1901,8 @@ async function processPowninCommand(rawCommand) {
         return;
     }
 
-    // 3. SMART STOP SYSTEM v1.0
-    const stopCommand = normalizePowninText(command);
-
-    const isStopCommand =
-        /^(stop|stop speaking|stop voice|stop listening|cancel|থামো|থাম|বন্ধ করো|কথা বন্ধ করো|রुको|रुक जाओ|बंद करो|बोलना बंद करो|thamo|tham|bondho koro|kotha bondho koro)$/i
-            .test(stopCommand);
-
-    if (isStopCommand) {
+    // 3. SMART STOP — English, Bengali, Hindi, Banglish
+    if (isPowninVoicePhrase(command, "stop")) {
         powninCommandToken++;
 
         cancelPowninOnlineRequest();
