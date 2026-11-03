@@ -138,43 +138,68 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // ==========================================
-    // TEXT TO SPEECH INITIALIZATION
-    // ==========================================
 
-    private fun setupTextToSpeech() {
+// ==========================================
+// TEXT TO SPEECH INITIALIZATION
+// ==========================================
 
-        textToSpeech = TextToSpeech(this) { status ->
+private fun setupTextToSpeech() {
 
-            if (status == TextToSpeech.SUCCESS) {
+    textToSpeech = TextToSpeech(this) { status ->
 
-                ttsReady = true
+        if (status == TextToSpeech.SUCCESS) {
 
-                applyVoiceSettings()
-                setTtsLanguageNative(currentLanguage)
+            ttsReady = true
 
-                pendingText?.let { text ->
+            // ==================================
+            // CHECK AVAILABLE TTS VOICES
+            // ==================================
 
-                    val language = pendingLanguage
+            val availableVoices = textToSpeech?.voices
 
-                    pendingText = null
+            availableVoices?.forEach { voice ->
 
-                    speakNative(text, language)
-                }
-
-                notifyJavascript("onNativeTtsReady")
-
-            } else {
-
-                ttsReady = false
-
-                notifyJavascript(
-                    "onNativeSpeechError",
-                    "TTS initialization failed"
+                android.util.Log.d(
+                    "POWNIN_TTS",
+                    "Voice: ${voice.name} | " +
+                    "Language: ${voice.locale} | " +
+                    "Quality: ${voice.quality}"
                 )
             }
+
+            // ==================================
+            // APPLY VOICE SETTINGS
+            // ==================================
+
+            applyVoiceSettings()
+            setTtsLanguageNative(currentLanguage)
+
+            // ==================================
+            // SPEAK PENDING TEXT
+            // ==================================
+
+            pendingText?.let { text ->
+
+                val language = pendingLanguage
+
+                pendingText = null
+
+                speakNative(text, language)
+            }
+
+            notifyJavascript("onNativeTtsReady")
+
+        } else {
+
+            ttsReady = false
+
+            notifyJavascript(
+                "onNativeSpeechError",
+                "TTS initialization failed"
+            )
         }
     }
+}
 
     // ==========================================
     // TTS LANGUAGE
