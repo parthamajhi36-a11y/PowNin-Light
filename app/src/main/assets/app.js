@@ -23,7 +23,49 @@ let powninCommandToken = 0;
 let activePowninAbortController = null;
 let lastReply = "";
 let lastUserCommand = "";
+// Persistent Chat History
+const POWNIN_HISTORY_KEY = "pownin_chat_history_v1";
+
 let history = [];
+
+function loadPowninHistory() {
+    try {
+        const savedHistory = localStorage.getItem(POWNIN_HISTORY_KEY);
+
+        if (!savedHistory) {
+            history = [];
+            return;
+        }
+
+        const parsedHistory = JSON.parse(savedHistory);
+
+        if (Array.isArray(parsedHistory)) {
+            history = parsedHistory
+                .filter(function (item) {
+                    return item &&
+                        (item.role === "user" || item.role === "assistant") &&
+                        typeof item.content === "string";
+                })
+                .slice(-MAX_HISTORY_MESSAGES);
+        } else {
+            history = [];
+        }
+    } catch (error) {
+        console.error("Pownin history load error:", error);
+        history = [];
+    }
+}
+
+function savePowninHistory() {
+    try {
+        localStorage.setItem(
+            POWNIN_HISTORY_KEY,
+            JSON.stringify(history.slice(-MAX_HISTORY_MESSAGES))
+        );
+    } catch (error) {
+        console.error("Pownin history save error:", error);
+    }
+}
 
 // Notes use Android WebView DOM storage.
 const POWNIN_NOTES_KEY = "pownin_extra_notes_v1";
