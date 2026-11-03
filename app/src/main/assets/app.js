@@ -2333,6 +2333,7 @@ setInterval(function () {
 // ------------------------------------------------------------
 
 loadPowninHistory();
+restorePowninChatHistory();
 
 setNetworkStatus(
     currentMode === "offline" ? "OFFLINE" :
