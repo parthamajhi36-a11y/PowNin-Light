@@ -18,10 +18,12 @@ let currentMode = "hybrid";
 let selectedLanguage = "en-IN";
 let speechEnabled = true;
 let isListening = false;
+let isListeningPaused = false;
 let isProcessing = false;
 let powninCommandToken = 0;
 let activePowninAbortController = null;
 let lastReply = "";
+let lastSpokenReply = "";
 let lastUserCommand = "";
 // Persistent Chat History
 const POWNIN_HISTORY_KEY = "pownin_chat_history_v1";
