@@ -2073,19 +2073,9 @@ function updatePowninClock() {
         );
 }
 
-
 // ------------------------------------------------------------
 // 2. ANDROID BRIDGE HELPERS
 // ------------------------------------------------------------
-
-function stopPowninNativeVoice() {
-    callPowninAndroid("stopSpeaking", []);
-    callPowninAndroid("stopListening", []);
-
-    isListening = false;
-
-    setVoiceStatus("READY");
-}
 
 function startPowninNativeListening() {
     const language = getCurrentLanguage();
@@ -2096,23 +2086,22 @@ function startPowninNativeListening() {
     );
 
     if (!result || !result.success) {
-        setStatus(
-            "Could not start voice recognition.",
-            true
-        );
+        isListening = false;
+        isListeningPaused = false;
 
+        setStatus("Could not start voice recognition.", true);
         setVoiceStatus("UNAVAILABLE");
         return false;
     }
 
     isListening = true;
+    isListeningPaused = false;
 
     setVoiceStatus("LISTENING");
     setStatus("Listening...");
 
     return true;
 }
-
 
 // ------------------------------------------------------------
 // 3. NATIVE ANDROID SPEECH CALLBACKS
