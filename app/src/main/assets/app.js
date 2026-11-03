@@ -1565,16 +1565,19 @@ async function requestPowninOnlineAI(command, language) {
 
         const answerStyle = getPowninAnswerStyle(lang);
 
+        // LANGUAGE-AWARE SYSTEM PROMPT
         const systemPrompt = [
             "You are Pownin, an Android AI voice assistant.",
-            "Reply in the user's language.",
+            answerStyle.replyInstruction,
             "Supported languages: Bengali, Hindi, English and Banglish.",
             "Use a friendly, clear and medium-length answer.",
             "Do not claim to have performed a device action unless the app confirms it.",
             "Do not claim access to device files, calls, messages or apps unless a tool confirms it.",
             "Keep answers suitable for a general audience.",
-            "Reply language: " + answerStyle.language,
-            "Answer length: " + answerStyle.length
+            "Reply language: " + answerStyle.languageName,
+            "Answer length: " + answerStyle.length,
+            "Personality: " + answerStyle.personality,
+            "Current mode: " + answerStyle.mode
         ].join(" ");
 
         const messages = [
