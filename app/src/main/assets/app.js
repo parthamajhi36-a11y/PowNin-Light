@@ -2314,6 +2314,8 @@ setInterval(function () {
 // 17. INITIAL SYSTEM STATUS
 // ------------------------------------------------------------
 
+loadPowninHistory();
+
 setNetworkStatus(
     currentMode === "offline" ? "OFFLINE" :
     currentMode === "online" ? "ONLINE AI" :
