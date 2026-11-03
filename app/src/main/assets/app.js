@@ -141,16 +141,58 @@ function normalizePowninDigits(text) {
    ========================================================= */
 
 const POWNIN_VOICE_PHRASES = {
+    start: [
+        "start listening",
+        "start voice",
+        "শোনা শুরু করো",
+        "শুনতে শুরু করো",
+        "सुनना शुरू करो",
+        "sunna shuru karo",
+        "shona shuru koro"
+    ],
+
+    pause: [
+        "pause",
+        "pause listening",
+        "pause voice",
+        "শোনা থামাও",
+        "শোনা বন্ধ করো",
+        "सुनना रोक दो",
+        "sunna rok do",
+        "shona thamaw"
+    ],
+
+    resume: [
+        "resume listening",
+        "resume voice",
+        "continue listening",
+        "আবার শোনা শুরু করো",
+        "আবার শোনো",
+        "फिर से सुनो",
+        "दोबारा सुनना शुरू करो",
+        "abar shono",
+        "abar shunte shuru koro"
+    ],
+
+    repeat: [
+        "repeat",
+        "repeat last reply",
+        "say that again",
+        "আবার বলো",
+        "শেষ উত্তর আবার বলো",
+        "फिर से बोलो",
+        "दोबारा बोलो",
+        "abar bolo",
+        "shesh uttor abar bolo"
+    ],
+
     stop: [
-        // English
         "stop",
         "stop speaking",
         "stop voice",
         "stop listening",
         "cancel",
         "be quiet",
-
-        // Bengali
         "থামো",
         "থাম",
         "থামুন",
@@ -159,22 +201,18 @@ const POWNIN_VOICE_PHRASES = {
         "কথা বন্ধ করো",
         "কথা থামাও",
         "চুপ করো",
-
-        // Hindi
         "रुको",
         "रुक जाओ",
         "रुकिए",
         "बंद करो",
         "बोलना बंद करो",
         "चुप हो जाओ",
-
-        // Banglish
         "thamo",
         "tham",
         "theme jao",
         "bondho koro",
         "kotha bondho koro",
-        "kotha thamাও",
+        "kotha thamaw",
         "chup koro"
     ]
 };
@@ -191,6 +229,57 @@ function isPowninVoicePhrase(command, action) {
     return phrases.some(function (phrase) {
         return normalizePowninText(phrase) === normalizedCommand;
     });
+}
+
+// ------------------------------------------------------------
+// POWNIN LISTENING CONTROLS v2.0
+// ------------------------------------------------------------
+
+function pausePowninListening() {
+    if (!isListening) {
+        setStatus("Pownin is not listening.");
+        return false;
+    }
+
+    callPowninAndroid("stopListening", []);
+
+    isListening = false;
+    isListeningPaused = true;
+
+    setVoiceStatus("PAUSED");
+    setStatus("Listening paused.");
+
+    return true;
+}
+
+function resumePowninListening() {
+    if (!isListeningPaused) {
+        setStatus("Listening is not paused.");
+        return false;
+    }
+
+    return startPowninNativeListening();
+}
+
+function startPowninListeningCommand() {
+    if (isListening) {
+        setStatus("Already listening.");
+        return true;
+    }
+
+    return startPowninNativeListening();
+}
+
+function repeatPowninLastReply() {
+    const message = String(lastSpokenReply || "").trim();
+
+    if (!message) {
+        setStatus("There is no previous spoken reply to repeat.", true);
+        return false;
+    }
+
+    speakPowninReply(message);
+    return true;
 }
 
 // ------------------------------------------------------------
@@ -1917,6 +2006,30 @@ async function processPowninCommand(rawCommand) {
         return;
     }
 
+        // 4. START LISTENING
+    if (isPowninVoicePhrase(command, "start")) {
+        startPowninListeningCommand();
+        return;
+    }
+
+    // 5. PAUSE LISTENING
+    if (isPowninVoicePhrase(command, "pause")) {
+        pausePowninListening();
+        return;
+    }
+
+    // 6. RESUME LISTENING
+    if (isPowninVoicePhrase(command, "resume")) {
+        resumePowninListening();
+        return;
+    }
+
+    // 7. REPEAT LAST REPLY
+    if (isPowninVoicePhrase(command, "repeat")) {
+        repeatPowninLastReply();
+        return;
+    }
+
     // 4. Check whether another command is processing
     if (isProcessing) {
         setStatus(
@@ -2002,7 +2115,7 @@ async function processPowninCommand(rawCommand) {
 }
 
 // ------------------------------------------------------------
-// 5. CANCEL CURRENT COMMAND
+// 5. CANCEL CURRENT COMMAND + VOICE
 // ------------------------------------------------------------
 
 function stopPowninProcessing() {
@@ -2012,6 +2125,13 @@ function stopPowninProcessing() {
 
     isProcessing = false;
 
+    callPowninAndroid("stopSpeaking", []);
+    callPowninAndroid("stopListening", []);
+
+    isListening = false;
+    isListeningPaused = false;
+
+    setVoiceStatus("READY");
     setStatus("Ready", false);
 }
 
@@ -2138,10 +2258,8 @@ window.onNativeSpeechError = function (errorMessage) {
     );
 };
 
-
 // ------------------------------------------------------------
-// 4. FIX REPLY SPEAKING
-// Android speak() requires text AND language.
+// FIX REPLY SPEAKING + SAVE LAST SPOKEN REPLY
 // ------------------------------------------------------------
 
 function speakPowninReply(message) {
@@ -2160,6 +2278,8 @@ function speakPowninReply(message) {
         setVoiceStatus("VOICE UNAVAILABLE");
         return;
     }
+
+    lastSpokenReply = text;
 
     setVoiceStatus("SPEAKING");
 }
@@ -2222,7 +2342,6 @@ if (commandInput) {
     updatePowninCharacterCount();
 }
 
-
 // ------------------------------------------------------------
 // 8. MICROPHONE BUTTON
 // ------------------------------------------------------------
@@ -2233,6 +2352,7 @@ if (micBtn) {
             callPowninAndroid("stopListening", []);
 
             isListening = false;
+            isListeningPaused = false;
 
             setVoiceStatus("READY");
             setStatus("Listening stopped.");
@@ -2240,10 +2360,10 @@ if (micBtn) {
             return;
         }
 
+        isListeningPaused = false;
         startPowninNativeListening();
     });
 }
-
 
 // ------------------------------------------------------------
 // 9. STOP VOICE BUTTON
@@ -2252,12 +2372,10 @@ if (micBtn) {
 if (stopSpeakBtn) {
     stopSpeakBtn.addEventListener("click", function () {
         stopPowninProcessing();
-        stopPowninNativeVoice();
 
         setStatus("Voice and processing stopped.");
     });
 }
-
 
 // ------------------------------------------------------------
 // 10. REPEAT LAST REPLY
