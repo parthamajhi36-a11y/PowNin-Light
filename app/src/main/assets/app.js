@@ -233,6 +233,7 @@ function isPowninVoicePhrase(command, action) {
 
 // ------------------------------------------------------------
 // POWNIN LISTENING CONTROLS v2.0
+// Start Listening + Pause + Resume + Repeat Last Reply
 // ------------------------------------------------------------
 
 function pausePowninListening() {
@@ -270,11 +271,20 @@ function startPowninListeningCommand() {
     return startPowninNativeListening();
 }
 
+// ------------------------------------------------------------
+// REPEAT LAST SPOKEN REPLY
+// ------------------------------------------------------------
+
 function repeatPowninLastReply() {
     const message = String(lastSpokenReply || "").trim();
 
     if (!message) {
         setStatus("There is no previous spoken reply to repeat.", true);
+        return false;
+    }
+
+    if (!speechEnabled) {
+        setStatus("Voice output is disabled.", true);
         return false;
     }
 
