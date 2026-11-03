@@ -92,7 +92,7 @@ function normalizePowninDigits(text) {
 
 // ------------------------------------------------------------
 // 4. LANGUAGE DETECTION
-// Supports Bengali, Hindi, English and common Banglish.
+// Bengali, Hindi, English and Banglish support.
 // ------------------------------------------------------------
 
 function detectPowninLanguage(text) {
@@ -109,10 +109,10 @@ function detectPowninLanguage(text) {
     const normalized = normalizePowninText(value);
 
     const bengaliWords =
-        /\b(amar|amake|tumi|tumi ki|kemon|bhalo|bolo|bolun|koro|korbe|ki|kothay|bangla|shomoy|somoy|tarikh|dhonnobad|pownin|kholo|khol|kholbe|khol do|chalu koro)\b/;
+        /\b(amar|amake|ami|amra|amader|tumi|tomar|tomake|apni|apnar|naam|nam|name|kemon|acho|achho|bhalo|valo|bolo|bolun|koro|korbe|ki|kothay|kothay|keno|kokhon|bangla|banglay|shomoy|somoy|tarikh|dhonnobad|pownin|kholo|khol|kholbe|help koro|ki koro|ke tumi)\b/i;
 
     const hindiWords =
-        /\b(mera|mujhe|tum|aap|kaise|kya|batao|bolo|samay|tarikh|dhanyavad|namaste|hindi)\b/;
+        /\b(mera|meri|mujhe|main|hum|tum|tumhara|aap|aapka|kaise|kaisa|kya|batao|samay|tarikh|dhanyavad|namaste|hindi|kholo|khol do)\b/i;
 
     if (bengaliWords.test(normalized)) {
         return "bn-IN";
@@ -123,28 +123,6 @@ function detectPowninLanguage(text) {
     }
 
     return normalizePowninLanguage(selectedLanguage);
-}
-
-function normalizePowninLanguage(language) {
-    const value = String(language || "").toLowerCase();
-
-    if (value.startsWith("bn")) {
-        return "bn-IN";
-    }
-
-    if (value.startsWith("hi")) {
-        return "hi-IN";
-    }
-
-    return "en-IN";
-}
-
-function getCurrentLanguage() {
-    return normalizePowninLanguage(selectedLanguage);
-}
-
-function getReplyLanguage(text) {
-    return normalizePowninLanguage(detectPowninLanguage(text));
 }
 
 // ------------------------------------------------------------
