@@ -168,7 +168,7 @@ function detectPowninLanguage(text) {
 }
 
 // ------------------------------------------------------------
-// 5. CHAT HISTORY
+// 5. CHAT HISTORY — PERSISTENT VERSION
 // ------------------------------------------------------------
 
 function addHistory(role, content) {
@@ -182,6 +182,8 @@ function addHistory(role, content) {
     if (history.length > MAX_HISTORY_MESSAGES) {
         history = history.slice(-MAX_HISTORY_MESSAGES);
     }
+
+    savePowninHistory();
 }
 
 function getPowninHistory() {
@@ -195,6 +197,7 @@ function getPowninHistory() {
 
 function clearPowninHistory() {
     history = [];
+    savePowninHistory();
 }
 
 // ------------------------------------------------------------
