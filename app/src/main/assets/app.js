@@ -2379,7 +2379,16 @@ if (micBtn) {
         }
 
         isListeningPaused = false;
-        startPowninNativeListening();
+
+        const started = startPowninNativeListening();
+
+        if (!started) {
+            isListening = false;
+            isListeningPaused = false;
+
+            setVoiceStatus("READY");
+            setStatus("Could not start listening.", true);
+        }
     });
 }
 
