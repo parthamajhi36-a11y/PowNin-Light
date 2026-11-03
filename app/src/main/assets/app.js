@@ -1819,6 +1819,7 @@ function deliverPowninReply(message, options) {
     setStatus("Ready", false);
 }
 
+
 // ------------------------------------------------------------
 // 4. PROCESS ONE USER COMMAND
 // ------------------------------------------------------------
@@ -1826,11 +1827,13 @@ function deliverPowninReply(message, options) {
 async function processPowninCommand(rawCommand) {
     const command = String(rawCommand || "").trim();
 
+    // 1. Check empty command
     if (!command) {
         setStatus("Please enter a command.", true);
         return;
     }
 
+    // 2. Check command length
     if (command.length > MAX_COMMAND_LENGTH) {
         deliverPowninReply(
             "Your command is too long. Please use a shorter command.",
@@ -1839,8 +1842,32 @@ async function processPowninCommand(rawCommand) {
         return;
     }
 
+    // 3. SMART STOP SYSTEM v1.0
+    const stopCommand = normalizePowninText(command);
+
+    const isStopCommand =
+        /^(stop|stop speaking|stop voice|stop listening|cancel|থামো|থাম|বন্ধ করো|কথা বন্ধ করো|রुको|रुक जाओ|बंद करो|बोलना बंद करो|thamo|tham|bondho koro|kotha bondho koro)$/i
+            .test(stopCommand);
+
+    if (isStopCommand) {
+        powninCommandToken++;
+
+        cancelPowninOnlineRequest();
+
+        isProcessing = false;
+
+        stopPowninNativeVoice();
+
+        setStatus("Pownin stopped.");
+        return;
+    }
+
+    // 4. Check whether another command is processing
     if (isProcessing) {
-        setStatus("Please wait. Pownin is processing the previous command.", true);
+        setStatus(
+            "Please wait. Pownin is processing the previous command.",
+            true
+        );
         return;
     }
 
@@ -1884,7 +1911,7 @@ async function processPowninCommand(rawCommand) {
             language
         );
 
-        // Ignore an outdated result if another command has replaced it.
+        // Ignore outdated results after Stop or a newer command.
         if (commandToken !== powninCommandToken) {
             return;
         }
