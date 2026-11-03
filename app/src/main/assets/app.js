@@ -328,19 +328,39 @@ function getPowninThanksReply(language) {
 }
 
 // ------------------------------------------------------------
-// 2. SPECIAL GREETING DETECTION
-// Replaces the greeting helper from pownin-special.js.
+// POWNIN ANSWER STYLE
+// Language-aware AI response settings.
 // ------------------------------------------------------------
 
-function isPowninGreetingCommand(text) {
-    const value = normalizePowninText(text);
-
-    return /^(hi|hello|hey|good morning|good afternoon|good evening|namaste|namaskar|হ্যালো|হাই|নমস্কার|সুপ্রভাত|নমস্তে|नमस्ते|नमस्कार|सुप्रभात)[!.?,\s]*$/i.test(value);
-}
-
 function getPowninAnswerStyle(language) {
+    const lang = normalizePowninLanguage(language);
+
+    let languageName;
+    let replyInstruction;
+
+    if (lang === "bn-IN") {
+        languageName = "Bengali";
+
+        replyInstruction =
+            "Always reply in natural Bengali using Bengali script. " +
+            "If the user writes in Banglish or Romanized Bangla, " +
+            "understand it as Bengali and reply in Bengali script.";
+    } else if (lang === "hi-IN") {
+        languageName = "Hindi";
+
+        replyInstruction =
+            "Always reply in natural Hindi using Devanagari script.";
+    } else {
+        languageName = "English";
+
+        replyInstruction =
+            "Always reply in clear, natural English.";
+    }
+
     return {
-        language: normalizePowninLanguage(language),
+        language: lang,
+        languageName: languageName,
+        replyInstruction: replyInstruction,
         length: "medium",
         personality: "friendly",
         mode: currentMode
