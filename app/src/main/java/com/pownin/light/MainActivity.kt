@@ -1,4 +1,3 @@
-
 package com.pownin.light
 
 import android.Manifest
@@ -32,6 +31,19 @@ class MainActivity : ComponentActivity() {
     private var speechRecognizer: SpeechRecognizer? = null
     private var textToSpeech: TextToSpeech? = null
 
+    // ==========================================
+    // SPEECH SESSION SAFETY
+    // ==========================================
+
+    private var speechSessionId = 0
+    private var activeSpeechSessionId = 0
+    private var speechSessionActive = false
+    private var permissionRequestSessionId = 0
+
+    // ==========================================
+    // TEXT TO SPEECH STATE
+    // ==========================================
+
     private var ttsReady = false
 
     private var pendingText: String? = null
@@ -52,9 +64,23 @@ class MainActivity : ComponentActivity() {
             ActivityResultContracts.RequestPermission()
         ) { granted ->
 
+            val requestedSession = permissionRequestSessionId
+
+            if (
+                !speechSessionActive ||
+                requestedSession != activeSpeechSessionId
+            ) {
+                return@registerForActivityResult
+            }
+
             if (granted) {
-                launchRecognition(pendingLanguage)
+                launchRecognition(
+                    pendingLanguage,
+                    requestedSession
+                )
             } else {
+                finishSpeechSession(requestedSession)
+
                 notifyJavascript(
                     "onNativeSpeechError",
                     "Microphone permission denied"
@@ -70,7 +96,6 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         setupTextToSpeech()
-        setupSpeechRecognizer()
 
         setContent {
 
@@ -267,80 +292,133 @@ class MainActivity : ComponentActivity() {
     }
 
     // ==========================================
-    // SPEECH RECOGNIZER SETUP
+    // SPEECH SESSION VALIDATION
     // ==========================================
 
-    private fun setupSpeechRecognizer() {
+    private fun isCurrentSpeechSession(
+        sessionId: Int
+    ): Boolean {
 
-        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+        return speechSessionActive &&
+            activeSpeechSessionId == sessionId
+    }
+
+    private fun finishSpeechSession(
+        sessionId: Int
+    ) {
+
+        if (activeSpeechSessionId != sessionId) {
             return
         }
 
-        speechRecognizer =
-            SpeechRecognizer.createSpeechRecognizer(this)
-
-        speechRecognizer?.setRecognitionListener(
-
-            object : RecognitionListener {
-
-                override fun onReadyForSpeech(params: Bundle?) {
-                    notifyJavascript("onNativeListening")
-                }
-
-                override fun onBeginningOfSpeech() {}
-
-                override fun onRmsChanged(rmsdB: Float) {}
-
-                override fun onBufferReceived(buffer: ByteArray?) {}
-
-                override fun onEndOfSpeech() {}
-
-                override fun onError(error: Int) {
-
-                    notifyJavascript(
-                        "onNativeSpeechError",
-                        "Speech recognition error: $error"
-                    )
-                }
-
-                override fun onResults(results: Bundle?) {
-
-                    val matches =
-                        results?.getStringArrayList(
-                            SpeechRecognizer.RESULTS_RECOGNITION
-                        )
-
-                    val spokenText = matches?.firstOrNull()
-
-                    if (!spokenText.isNullOrBlank()) {
-
-                        notifyJavascript(
-                            "onNativeSpeechResult",
-                            spokenText
-                        )
-
-                    } else {
-
-                        notifyJavascript(
-                            "onNativeSpeechError",
-                            "No speech detected"
-                        )
-                    }
-                }
-
-                override fun onPartialResults(
-                    partialResults: Bundle?
-                ) {}
-
-                override fun onEvent(
-                    eventType: Int,
-                    params: Bundle?
-                ) {}
-            }
-        )
+        speechSessionActive = false
     }
 
     // ==========================================
+    // SPEECH RECOGNIZER SETUP
+    // Each session gets its own listener.
+    // ==========================================
+
+    private fun setupSpeechRecognizer(
+        sessionId: Int
+    ): Boolean {
+
+        try {
+
+            speechRecognizer?.destroy()
+            speechRecognizer = null
+
+            if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+                return false
+            }
+
+            val recognizer =
+                SpeechRecognizer.createSpeechRecognizer(this)
+
+            speechRecognizer = recognizer
+
+            recognizer.setRecognitionListener(
+
+                object : RecognitionListener {
+
+                    override fun onReadyForSpeech(params: Bundle?) {
+
+                        if (!isCurrentSpeechSession(sessionId)) return
+
+                        notifyJavascript("onNativeListening")
+                    }
+
+                    override fun onBeginningOfSpeech() {
+                        if (!isCurrentSpeechSession(sessionId)) return
+                    }
+
+                    override fun onRmsChanged(rmsdB: Float) {}
+
+                    override fun onBufferReceived(buffer: ByteArray?) {}
+
+                    override fun onEndOfSpeech() {}
+
+                    override fun onError(error: Int) {
+
+                        if (!isCurrentSpeechSession(sessionId)) return
+
+                        finishSpeechSession(sessionId)
+
+                        notifyJavascript(
+                            "onNativeSpeechError",
+                            "Speech recognition error: $error"
+                        )
+                    }
+
+                    override fun onResults(results: Bundle?) {
+
+                        if (!isCurrentSpeechSession(sessionId)) return
+
+                        val matches =
+                            results?.getStringArrayList(
+                                SpeechRecognizer.RESULTS_RECOGNITION
+                            )
+
+                        val spokenText = matches?.firstOrNull()
+
+                        finishSpeechSession(sessionId)
+
+                        if (!spokenText.isNullOrBlank()) {
+
+                            notifyJavascript(
+                                "onNativeSpeechResult",
+                                spokenText
+                            )
+
+                        } else {
+
+                            notifyJavascript(
+                                "onNativeSpeechError",
+                                "No speech detected"
+                            )
+                        }
+                    }
+
+                    override fun onPartialResults(
+                        partialResults: Bundle?
+                    ) {}
+
+                    override fun onEvent(
+                        eventType: Int,
+                        params: Bundle?
+                    ) {}
+                }
+            )
+
+            return true
+
+        } catch (error: Exception) {
+
+            return false
+        }
+    }
+
+        // ==========================================
     // START NATIVE LISTENING
     // ==========================================
 
@@ -348,9 +426,18 @@ class MainActivity : ComponentActivity() {
 
         runOnUiThread {
 
+            speechSessionId++
+
+            val newSessionId = speechSessionId
+
+            activeSpeechSessionId = newSessionId
+            speechSessionActive = true
             pendingLanguage = language
+            permissionRequestSessionId = newSessionId
 
             if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+
+                finishSpeechSession(newSessionId)
 
                 notifyJavascript(
                     "onNativeSpeechError",
@@ -373,16 +460,36 @@ class MainActivity : ComponentActivity() {
                 return@runOnUiThread
             }
 
-            launchRecognition(language)
+            launchRecognition(language, newSessionId)
         }
     }
 
-    private fun launchRecognition(language: String) {
+    // ==========================================
+    // LAUNCH RECOGNITION
+    // ==========================================
+
+    private fun launchRecognition(
+        language: String,
+        sessionId: Int
+    ) {
+
+        if (!isCurrentSpeechSession(sessionId)) return
 
         try {
 
-            if (speechRecognizer == null) {
-                setupSpeechRecognizer()
+            val recognizerReady =
+                setupSpeechRecognizer(sessionId)
+
+            if (!recognizerReady) {
+
+                finishSpeechSession(sessionId)
+
+                notifyJavascript(
+                    "onNativeSpeechError",
+                    "Unable to create speech recognizer"
+                )
+
+                return
             }
 
             val intent = Intent(
@@ -415,9 +522,15 @@ class MainActivity : ComponentActivity() {
                 )
             }
 
+            if (!isCurrentSpeechSession(sessionId)) return
+
             speechRecognizer?.startListening(intent)
 
         } catch (error: Exception) {
+
+            if (!isCurrentSpeechSession(sessionId)) return
+
+            finishSpeechSession(sessionId)
 
             notifyJavascript(
                 "onNativeSpeechError",
@@ -428,16 +541,30 @@ class MainActivity : ComponentActivity() {
 
     // ==========================================
     // STOP NATIVE LISTENING
+    // INVALIDATE OLD SESSION
     // ==========================================
 
     private fun stopNativeListening() {
 
         runOnUiThread {
 
+            speechSessionId++
+
+            activeSpeechSessionId = speechSessionId
+            speechSessionActive = false
+            permissionRequestSessionId = 0
+
             try {
                 speechRecognizer?.cancel()
             } catch (_: Exception) {
             }
+
+            try {
+                speechRecognizer?.destroy()
+            } catch (_: Exception) {
+            }
+
+            speechRecognizer = null
         }
     }
 
@@ -835,6 +962,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
 
+        speechSessionId++
+        activeSpeechSessionId = speechSessionId
+        speechSessionActive = false
+        permissionRequestSessionId = 0
+
         if (::webView.isInitialized) {
 
             webView.stopLoading()
@@ -845,6 +977,11 @@ class MainActivity : ComponentActivity() {
 
             webView.loadUrl("about:blank")
             webView.destroy()
+        }
+
+        try {
+            speechRecognizer?.cancel()
+        } catch (_: Exception) {
         }
 
         speechRecognizer?.destroy()
