@@ -157,6 +157,99 @@ private fun setupTextToSpeech() {
 
             val availableVoices = textToSpeech?.voices
 
+            android.util.Log.d(
+                "POWNIN_TTS",
+                "TOTAL VOICES: ${availableVoices?.size ?: 0}"
+            )
+
+            availableVoices?.forEach { voice ->
+
+                android.util.Log.d(
+                    "POWNIN_TTS",
+                    "Voice: ${voice.name} | " +
+                    "Language: ${voice.locale} | " +
+                    "Quality: ${voice.quality}"
+                )
+            }
+
+            // ==================================
+            // APPLY DEFAULT VOICE SETTINGS
+            // ==================================
+
+            applyVoiceSettings()
+
+            // ==================================
+            // SET DEFAULT LANGUAGE
+            // ==================================
+
+            setTtsLanguageNative(currentLanguage)
+
+            // ==================================
+            // SPEAK PENDING TEXT
+            // ==================================
+
+            pendingText?.let { text ->
+
+                val language = pendingLanguage
+                pendingText = null
+
+                speakNative(text, language)
+            }
+
+            // ==================================
+            // NOTIFY JAVASCRIPT
+            // ==================================
+
+            webView?.post {
+
+                webView?.evaluateJavascript(
+                    "window.onNativeTtsReady && window.onNativeTtsReady();",
+                    null
+                )
+            }
+
+        } else {
+
+            ttsReady = false
+
+            android.util.Log.e(
+                "POWNIN_TTS",
+                "TextToSpeech initialization failed. Status: $status"
+            )
+        }
+    }
+}
+
+            // ==================================
+            // APPLY VOICE SETTINGS
+            // ==================================
+
+            applyVoiceSettings()
+            setTtsLanguageNative(currentLanguage)
+
+// ==========================================
+// TEXT TO SPEECH INITIALIZATION
+// ==========================================
+
+private fun setupTextToSpeech() {
+
+    textToSpeech = TextToSpeech(this) { status ->
+
+        if (status == TextToSpeech.SUCCESS) {
+
+            ttsReady = true
+
+            // ==================================
+            // CHECK AVAILABLE TTS VOICES
+            // ==================================
+
+            val availableVoices = textToSpeech?.voices
+
+            android.util.Log.d(
+                "POWNIN_TTS",
+                "TOTAL VOICES: ${availableVoices?.size ?: 0}"
+            )
+
             availableVoices?.forEach { voice ->
 
                 android.util.Log.d(
@@ -172,6 +265,11 @@ private fun setupTextToSpeech() {
             // ==================================
 
             applyVoiceSettings()
+
+            // ==================================
+            // SET DEFAULT LANGUAGE
+            // ==================================
+
             setTtsLanguageNative(currentLanguage)
 
             // ==================================
@@ -186,6 +284,10 @@ private fun setupTextToSpeech() {
 
                 speakNative(text, language)
             }
+
+            // ==================================
+            // NOTIFY JAVASCRIPT
+            // ==================================
 
             notifyJavascript("onNativeTtsReady")
 
