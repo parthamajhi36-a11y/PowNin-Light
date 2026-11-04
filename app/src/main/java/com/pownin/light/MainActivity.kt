@@ -1,4 +1,3 @@
-
 package com.pownin.light
 
 import android.Manifest
