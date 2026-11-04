@@ -46,6 +46,9 @@ class MainActivity : ComponentActivity() {
 
     private var ttsReady = false
 
+    private var webPageLoaded = false
+    private var ttsInitializationFailed = false
+
     private var pendingText: String? = null
     private var pendingLanguage = "en-IN"
 
@@ -88,55 +91,75 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-    // ==========================================
-    // ACTIVITY CREATE
-    // ==========================================
+// ==========================================
+// ACTIVITY CREATE
+// ==========================================
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
+override fun onCreate(savedInstanceState: Bundle?) {
+    super.onCreate(savedInstanceState)
 
-        setupTextToSpeech()
+    setupTextToSpeech()
 
-        setContent {
+    setContent {
 
-            AndroidView(
-                modifier = Modifier.fillMaxSize(),
+        AndroidView(
+            modifier = Modifier.fillMaxSize(),
 
-                factory = { context ->
+            factory = { context ->
 
-                    webView = WebView(context)
+                webView = WebView(context)
 
-                    webView.settings.apply {
-                        javaScriptEnabled = true
-                        domStorageEnabled = true
-                        allowFileAccess = true
-                        allowContentAccess = false
-                        allowFileAccessFromFileURLs = false
-                        allowUniversalAccessFromFileURLs = false
-                        javaScriptCanOpenWindowsAutomatically = false
-                        setSupportMultipleWindows(false)
+                webView.settings.apply {
+                    javaScriptEnabled = true
+                    domStorageEnabled = true
+                    allowFileAccess = true
+                    allowContentAccess = false
+                    allowFileAccessFromFileURLs = false
+                    allowUniversalAccessFromFileURLs = false
+                    javaScriptCanOpenWindowsAutomatically = false
+                    setSupportMultipleWindows(false)
 
-                        mixedContentMode =
-                            WebSettings.MIXED_CONTENT_NEVER_ALLOW
-                    }
-
-                    webView.webChromeClient = WebChromeClient()
-                    webView.webViewClient = WebViewClient()
-
-                    webView.addJavascriptInterface(
-                        PowninBridge(),
-                        "PowninAndroid"
-                    )
-
-                    webView.loadUrl(
-                        "file:///android_asset/index.html"
-                    )
-
-                    webView
+                    mixedContentMode =
+                        WebSettings.MIXED_CONTENT_NEVER_ALLOW
                 }
-            )
-        }
+
+                webView.webChromeClient = WebChromeClient()
+
+                webView.webViewClient = object : WebViewClient() {
+
+                    override fun onPageFinished(
+                        view: WebView?,
+                        url: String?
+                    ) {
+                        super.onPageFinished(view, url)
+
+                        webPageLoaded = true
+
+                        if (ttsReady) {
+                            notifyJavascript("onNativeTtsReady")
+                        } else if (ttsInitializationFailed) {
+                            notifyJavascript(
+                                "onNativeSpeechError",
+                                "TTS initialization failed"
+                            )
+                        }
+                    }
+                }
+
+                webView.addJavascriptInterface(
+                    PowninBridge(),
+                    "PowninAndroid"
+                )
+
+                webView.loadUrl(
+                    "file:///android_asset/index.html"
+                )
+
+                webView
+            }
+        )
     }
+}
 
     // ==========================================
     // TEXT TO SPEECH INITIALIZATION
@@ -185,6 +208,7 @@ class MainActivity : ComponentActivity() {
             } else {
 
                 ttsReady = false
+                ttsInitializationFailed = true
 
                 android.util.Log.e(
                     "POWNIN_TTS",
@@ -770,7 +794,7 @@ class MainActivity : ComponentActivity() {
         message: String? = null
     ) {
 
-        if (!::webView.isInitialized) return
+        if (!::webView.isInitialized || !webPageLoaded) return
 
         runOnUiThread {
 
