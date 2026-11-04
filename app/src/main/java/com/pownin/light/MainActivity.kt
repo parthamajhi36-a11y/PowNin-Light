@@ -1,3 +1,4 @@
+
 package com.pownin.light
 
 import android.Manifest
@@ -138,170 +139,66 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // ==========================================
+    // TEXT TO SPEECH INITIALIZATION
+    // ==========================================
 
-// ==========================================
-// TEXT TO SPEECH INITIALIZATION
-// ==========================================
+    private fun setupTextToSpeech() {
 
-private fun setupTextToSpeech() {
+        textToSpeech = TextToSpeech(this) { status ->
 
-    textToSpeech = TextToSpeech(this) { status ->
+            if (status == TextToSpeech.SUCCESS) {
 
-        if (status == TextToSpeech.SUCCESS) {
+                ttsReady = true
 
-            ttsReady = true
+                // CHECK AVAILABLE TTS VOICES
 
-            // ==================================
-            // CHECK AVAILABLE TTS VOICES
-            // ==================================
-
-            val availableVoices = textToSpeech?.voices
-
-            android.util.Log.d(
-                "POWNIN_TTS",
-                "TOTAL VOICES: ${availableVoices?.size ?: 0}"
-            )
-
-            availableVoices?.forEach { voice ->
+                val availableVoices = textToSpeech?.voices
 
                 android.util.Log.d(
                     "POWNIN_TTS",
-                    "Voice: ${voice.name} | " +
-                    "Language: ${voice.locale} | " +
-                    "Quality: ${voice.quality}"
+                    "TOTAL VOICES: ${availableVoices?.size ?: 0}"
                 )
-            }
 
-            // ==================================
-            // APPLY DEFAULT VOICE SETTINGS
-            // ==================================
+                availableVoices?.forEach { voice ->
 
-            applyVoiceSettings()
+                    android.util.Log.d(
+                        "POWNIN_TTS",
+                        "Voice: ${voice.name} | " +
+                            "Language: ${voice.locale} | " +
+                            "Quality: ${voice.quality}"
+                    )
+                }
 
-            // ==================================
-            // SET DEFAULT LANGUAGE
-            // ==================================
+                applyVoiceSettings()
+                setTtsLanguageNative(currentLanguage)
 
-            setTtsLanguageNative(currentLanguage)
+                pendingText?.let { text ->
 
-            // ==================================
-            // SPEAK PENDING TEXT
-            // ==================================
+                    val language = pendingLanguage
+                    pendingText = null
 
-            pendingText?.let { text ->
+                    speakNative(text, language)
+                }
 
-                val language = pendingLanguage
-                pendingText = null
+                notifyJavascript("onNativeTtsReady")
 
-                speakNative(text, language)
-            }
+            } else {
 
-            // ==================================
-            // NOTIFY JAVASCRIPT
-            // ==================================
+                ttsReady = false
 
-            webView?.post {
-
-                webView?.evaluateJavascript(
-                    "window.onNativeTtsReady && window.onNativeTtsReady();",
-                    null
-                )
-            }
-
-        } else {
-
-            ttsReady = false
-
-            android.util.Log.e(
-                "POWNIN_TTS",
-                "TextToSpeech initialization failed. Status: $status"
-            )
-        }
-    }
-}
-
-            // ==================================
-            // APPLY VOICE SETTINGS
-            // ==================================
-
-            applyVoiceSettings()
-            setTtsLanguageNative(currentLanguage)
-
-// ==========================================
-// TEXT TO SPEECH INITIALIZATION
-// ==========================================
-
-private fun setupTextToSpeech() {
-
-    textToSpeech = TextToSpeech(this) { status ->
-
-        if (status == TextToSpeech.SUCCESS) {
-
-            ttsReady = true
-
-            // ==================================
-            // CHECK AVAILABLE TTS VOICES
-            // ==================================
-
-            val availableVoices = textToSpeech?.voices
-
-            android.util.Log.d(
-                "POWNIN_TTS",
-                "TOTAL VOICES: ${availableVoices?.size ?: 0}"
-            )
-
-            availableVoices?.forEach { voice ->
-
-                android.util.Log.d(
+                android.util.Log.e(
                     "POWNIN_TTS",
-                    "Voice: ${voice.name} | " +
-                    "Language: ${voice.locale} | " +
-                    "Quality: ${voice.quality}"
+                    "TextToSpeech initialization failed. Status: $status"
+                )
+
+                notifyJavascript(
+                    "onNativeSpeechError",
+                    "TTS initialization failed"
                 )
             }
-
-            // ==================================
-            // APPLY VOICE SETTINGS
-            // ==================================
-
-            applyVoiceSettings()
-
-            // ==================================
-            // SET DEFAULT LANGUAGE
-            // ==================================
-
-            setTtsLanguageNative(currentLanguage)
-
-            // ==================================
-            // SPEAK PENDING TEXT
-            // ==================================
-
-            pendingText?.let { text ->
-
-                val language = pendingLanguage
-
-                pendingText = null
-
-                speakNative(text, language)
-            }
-
-            // ==================================
-            // NOTIFY JAVASCRIPT
-            // ==================================
-
-            notifyJavascript("onNativeTtsReady")
-
-        } else {
-
-            ttsReady = false
-
-            notifyJavascript(
-                "onNativeSpeechError",
-                "TTS initialization failed"
-            )
         }
     }
-}
 
     // ==========================================
     // TTS LANGUAGE
@@ -316,9 +213,7 @@ private fun setupTextToSpeech() {
         ) {
 
             "bn", "bn-in" -> Locale("bn", "IN")
-
             "hi", "hi-in" -> Locale("hi", "IN")
-
             "en", "en-in" -> Locale("en", "IN")
 
             else -> Locale("en", "IN")
@@ -443,7 +338,6 @@ private fun setupTextToSpeech() {
 
     // ==========================================
     // SPEECH RECOGNIZER SETUP
-    // Each session gets its own listener.
     // ==========================================
 
     private fun setupSpeechRecognizer(
@@ -545,7 +439,7 @@ private fun setupTextToSpeech() {
         }
     }
 
-        // ==========================================
+    // ==========================================
     // START NATIVE LISTENING
     // ==========================================
 
@@ -897,191 +791,215 @@ private fun setupTextToSpeech() {
         }
     }
 
+// ==========================================
+// JAVASCRIPT BRIDGE
+// ==========================================
+
+inner class PowninBridge {
+
     // ==========================================
-    // JAVASCRIPT BRIDGE
+    // TEXT TO SPEECH
     // ==========================================
 
-    inner class PowninBridge {
+    @JavascriptInterface
+    fun speak(
+        text: String?,
+        language: String?
+    ) {
 
-        @JavascriptInterface
-        fun speak(
-            text: String?,
-            language: String?
+        if (text.isNullOrBlank()) return
+
+        val selectedLang =
+            language?.takeIf { it.isNotBlank() }
+                ?: currentLanguage
+
+        runOnUiThread {
+
+            if (ttsReady) {
+
+                speakNative(text, selectedLang)
+
+            } else {
+
+                pendingText = text
+                pendingLanguage = selectedLang
+            }
+        }
+    }
+
+    // ==========================================
+    // SPEECH RECOGNITION
+    // ==========================================
+
+    @JavascriptInterface
+    fun startListening(language: String?) {
+
+        startNativeListening(
+            language ?: currentLanguage
+        )
+    }
+
+    @JavascriptInterface
+    fun stopListening() {
+        stopNativeListening()
+    }
+
+    // ==========================================
+    // STOP VOICE
+    // ==========================================
+
+    @JavascriptInterface
+    fun stopSpeaking() {
+
+        runOnUiThread {
+            textToSpeech?.stop()
+        }
+    }
+
+    // ==========================================
+    // GAMING / NORMAL / DEEP VOICE STYLE
+    // ==========================================
+
+    @JavascriptInterface
+    fun setVoiceStyle(style: String?): Boolean {
+
+        if (style.isNullOrBlank()) {
+            return false
+        }
+
+        val normalized =
+            style.trim().lowercase(Locale.ROOT)
+
+        if (
+            normalized !in listOf(
+                "gaming",
+                "normal",
+                "deep"
+            )
+        ) {
+            return false
+        }
+
+        runOnUiThread {
+
+            voiceStyle = normalized
+            applyVoiceSettings()
+        }
+
+        return true
+    }
+
+    // ==========================================
+    // CHANGE TTS LANGUAGE
+    // ==========================================
+
+    @JavascriptInterface
+    fun setTtsLanguage(language: String?): Boolean {
+
+        val normalized = when (
+            language?.lowercase(Locale.ROOT)
         ) {
 
-            if (text.isNullOrBlank()) return
+            "bn-in", "bn" -> "bn-IN"
 
-            val selectedLang =
-                language?.takeIf { it.isNotBlank() }
-                    ?: currentLanguage
+            "hi-in", "hi" -> "hi-IN"
 
-            runOnUiThread {
+            "en-in", "en" -> "en-IN"
 
-                if (ttsReady) {
+            else -> return false
+        }
 
-                    speakNative(text, selectedLang)
+        runOnUiThread {
 
-                } else {
+            currentLanguage = normalized
 
-                    pendingText = text
-                    pendingLanguage = selectedLang
-                }
+            if (ttsReady) {
+                setTtsLanguageNative(normalized)
             }
         }
 
-        @JavascriptInterface
-        fun startListening(language: String?) {
+        return true
+    }
 
-            startNativeListening(
-                language ?: currentLanguage
-            )
-        }
+    // ==========================================
+    // ANDROID MEDIA VOLUME CONTROL
+    // ==========================================
 
-        @JavascriptInterface
-        fun stopListening() {
-            stopNativeListening()
-        }
+    @JavascriptInterface
+    fun adjustVolume(action: String?): Boolean {
 
-        @JavascriptInterface
-        fun stopSpeaking() {
+        return try {
 
-            runOnUiThread {
-                textToSpeech?.stop()
-            }
-        }
+            val audioManager =
+                getSystemService(AudioManager::class.java)
+                    ?: return false
 
-        // GAMING / NORMAL / DEEP VOICE STYLE
+            val stream = AudioManager.STREAM_MUSIC
 
-        @JavascriptInterface
-        fun setVoiceStyle(style: String?): Boolean {
+            when (action?.lowercase(Locale.ROOT)) {
 
-            if (style.isNullOrBlank()) {
-                return false
-            }
-
-            val normalized =
-                style.trim().lowercase(Locale.ROOT)
-
-            if (
-                normalized !in listOf(
-                    "gaming",
-                    "normal",
-                    "deep"
+                "up" -> audioManager.adjustStreamVolume(
+                    stream,
+                    AudioManager.ADJUST_RAISE,
+                    AudioManager.FLAG_SHOW_UI
                 )
-            ) {
-                return false
-            }
 
-            runOnUiThread {
+                "down" -> audioManager.adjustStreamVolume(
+                    stream,
+                    AudioManager.ADJUST_LOWER,
+                    AudioManager.FLAG_SHOW_UI
+                )
 
-                voiceStyle = normalized
-                applyVoiceSettings()
-            }
+                "mute" -> audioManager.adjustStreamVolume(
+                    stream,
+                    AudioManager.ADJUST_MUTE,
+                    AudioManager.FLAG_SHOW_UI
+                )
 
-            return true
-        }
-
-        // CHANGE TTS LANGUAGE
-
-        @JavascriptInterface
-        fun setTtsLanguage(language: String?): Boolean {
-
-            val normalized = when (
-                language?.lowercase(Locale.ROOT)
-            ) {
-
-                "bn-in", "bn" -> "bn-IN"
-
-                "hi-in", "hi" -> "hi-IN"
-
-                "en-in", "en" -> "en-IN"
+                "unmute" -> audioManager.adjustStreamVolume(
+                    stream,
+                    AudioManager.ADJUST_UNMUTE,
+                    AudioManager.FLAG_SHOW_UI
+                )
 
                 else -> return false
             }
 
-            currentLanguage = normalized
+            true
 
-            runOnUiThread {
+        } catch (error: Exception) {
 
-                if (ttsReady) {
-                    setTtsLanguageNative(normalized)
-                }
-            }
-
-            return true
-        }
-
-        // ANDROID MEDIA VOLUME CONTROL
-
-        @JavascriptInterface
-        fun adjustVolume(action: String?): Boolean {
-
-            return try {
-
-                val audioManager =
-                    getSystemService(AudioManager::class.java)
-                        ?: return false
-
-                val stream = AudioManager.STREAM_MUSIC
-
-                when (action?.lowercase(Locale.ROOT)) {
-
-                    "up" -> audioManager.adjustStreamVolume(
-                        stream,
-                        AudioManager.ADJUST_RAISE,
-                        AudioManager.FLAG_SHOW_UI
-                    )
-
-                    "down" -> audioManager.adjustStreamVolume(
-                        stream,
-                        AudioManager.ADJUST_LOWER,
-                        AudioManager.FLAG_SHOW_UI
-                    )
-
-                    "mute" -> audioManager.adjustStreamVolume(
-                        stream,
-                        AudioManager.ADJUST_MUTE,
-                        AudioManager.FLAG_SHOW_UI
-                    )
-
-                    "unmute" -> audioManager.adjustStreamVolume(
-                        stream,
-                        AudioManager.ADJUST_UNMUTE,
-                        AudioManager.FLAG_SHOW_UI
-                    )
-
-                    else -> return false
-                }
-
-                true
-
-            } catch (error: Exception) {
-
-                false
-            }
-        }
-
-        @JavascriptInterface
-        fun isVoiceReady(): Boolean {
-
-            return ttsReady &&
-                SpeechRecognizer.isRecognitionAvailable(
-                    this@MainActivity
-                )
-        }
-
-        // SMART APP CONTROL
-
-        @JavascriptInterface
-        fun openApp(appName: String?): String {
-
-            if (appName.isNullOrBlank()) {
-                return "INVALID_APP"
-            }
-
-            return launchAppFromCommand(appName)
+            false
         }
     }
+
+    // ==========================================
+    // CHECK VOICE READY
+    // ==========================================
+
+    @JavascriptInterface
+    fun isVoiceReady(): Boolean {
+
+        return ttsReady &&
+            SpeechRecognizer.isRecognitionAvailable(
+                this@MainActivity
+            )
+    }
+
+    // ==========================================
+    // SMART APP CONTROL
+    // ==========================================
+
+    @JavascriptInterface
+    fun openApp(appName: String?): String {
+
+        if (appName.isNullOrBlank()) {
+            return "INVALID_APP"
+        }
+
+        return launchAppFromCommand(appName)
+    }
+}
 
     // ==========================================
     // ACTIVITY DESTROY
